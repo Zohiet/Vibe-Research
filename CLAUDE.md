@@ -20,7 +20,7 @@ Vibe-Research：开源的「个人 AI 投研看板」，主 A 股、兼看美股
 | [`docs/harness/goal_workflow.md`](docs/harness/goal_workflow.md) | **三档怎么判、两道人工闸门、`goal/*` 分支与 `--no-ff` 合并、验收证据形态** |
 | [`docs/harness/agent_workflow.md`](docs/harness/agent_workflow.md) | **提交前缀口径、合并记录模板、agent 边界（哪些动作必须先问）、快通道** |
 
-一句话概括：开发单位是 `VR-GOAL-XXX_<slug>`；按改动性质分**豁免 / 轻量 / 完整**三档；完整档要过**两道人工闸门**（验收项确认、Plan 确认），且**代码写完不算完成**——要有证据、要写验收报告才能发布到 `main`。
+一句话概括：开发单位是 `VR-GOAL-XXX_<slug>`；按改动性质分**豁免 / 轻量 / 完整**三档；完整档要过**两道人工闸门**（第一道是**一轮拷打 `/mattpocock-skills:grilling`**、不是点头确认，第二道是 Plan 确认），且**代码写完不算完成**——要有证据、要写验收报告才能发布到 `main`。
 
 git 命令的执行细节、冲突高发位置、Windows 坑见用户级 skill **`VR-git`**。
 
