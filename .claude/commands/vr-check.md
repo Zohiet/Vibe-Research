@@ -6,7 +6,7 @@ description: 跑 Vibe-Research 全套验证（前端 tsc + 后端 pytest + 后�
 
 ```powershell
 ./ci.ps1          # 下面三步
-./ci.ps1 -E2E     # 再追加 Playwright 验收截图（需前后端已启动）
+./ci.ps1 -E2E     # 再追加 Playwright 验收截图（沙箱会自动起停，不用先手动起）
 ```
 
 下面是它逐步做的事，脚本不可用时手动走：

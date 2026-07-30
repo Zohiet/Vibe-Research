@@ -227,7 +227,7 @@ Plan 里若包含**改动他人写过的已有文件**、**装依赖 / 改环境
 
 ```powershell
 ./ci.ps1              # 前端类型检查 + 后端离线测试 + 后端 import 自检
-./ci.ps1 -E2E         # 再加 Playwright 验收（需要前后端已启动）
+./ci.ps1 -E2E         # 再加 Playwright 验收（沙箱自动起停，不必先手动起）
 ```
 
 或直接用 `/vr-check`（等价，且会替你判读结果）。

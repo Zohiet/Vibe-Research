@@ -127,9 +127,12 @@ portfolio / myreports / myaccumulation (本地用户数据)      cli_runtime.py 
 ## CI 与 E2E
 
 ```powershell
-./ci.ps1          # 前端 tsc + 后端 pytest + 后端 import 自检
-./ci.ps1 -E2E     # 追加 Playwright 验收（需先 ./dev.ps1 -Sandbox）
+./ci.ps1               # 前端 tsc + 后端 pytest + 后端 import 自检
+./ci.ps1 -E2E          # 追加 Playwright 验收。**沙箱没起会自动起、跑完自动关**
+./ci.ps1 -StopSandbox  # 只关沙箱（:8901 / :5900）
 ```
+
+沙箱的所有权规则：**只关自己起的**。已经起着的（你手动 `./dev.ps1 -Sandbox` 开来调试的）跑完原样保留；**E2E 失败时也保留**，好让你打开 `:5900` 用眼睛看——trace 只能回放不能交互。硬杀 `ci.ps1` 会留孤儿，用 `-StopSandbox` 清。
 
 另有 GitHub Actions（`.github/workflows/ci.yml`）在 push 时于 Linux 上独立跑 tsc + pytest。刻意不跑 Playwright——页面数据来自国内财经接口，美国 runner 打不通。
 
