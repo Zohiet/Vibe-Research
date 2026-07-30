@@ -46,10 +46,20 @@
 | pytest | `backend/tests/test_xxx.py::test_xxx` |
 | E2E | `frontend/e2e/VR-GOAL-XXX_<slug>.spec.ts` |
 
-### 截图
-| 文件名 | 证明哪条验收项 |
+### 验收证据
+| 验收项 | 证据形态 |
 |---|---|
-| `01_xxx.png` | 验收项 1 |
+| 1 | 截图 `01_xxx.jpg` |
+| 2 | 命令输出 |
+| 3 | GitHub Actions run URL |
+
+### 需要授权的动作
+按 agent 边界约定，以下三类必须**在 Plan 里显式列出**，确认 Plan 即视为授权；
+不涉及就写「无」：
+
+- 改动**他人写过**的已有文件（列出文件与改动要点）
+- 装依赖 / 改环境（npm i、pip install、往 conda 环境装包）
+- 删文件 / 删分支
 
 ### 风险
 - **调用方**：本次改动的 API 有哪些调用方？（`grep -rn "from \"@/lib/xxx\"" frontend/src`）
@@ -68,4 +78,14 @@
 
 ## 回滚
 
-出问题怎么退回去（通常：`main` 就是上一个已验证版本，`git checkout main`）。
+- **尚未并回 dev**：删分支即可。
+  ```bash
+  git checkout dev
+  git branch -D goal/VR-GOAL-XXX_<slug>
+  git push origin --delete goal/VR-GOAL-XXX_<slug>
+  ```
+- **已并回 dev**：`git revert -m 1 <合并提交>`。这正是坚持 `--no-ff` 的理由——
+  保留合并点，一个 Goal 才是可整体撤掉的单元。
+
+> ⚠️ `git checkout main` **不是回滚**，那只是切过去看上一个已验证版本的代码，
+> 你的改动仍在 dev 上原地不动。
