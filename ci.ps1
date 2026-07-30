@@ -49,7 +49,12 @@ if ($pytestOut -match '(\d+) failed') {
 # ── 3. 后端 import 自检（改过模块结构 / 合并过 import 块时尤其重要）──
 Section '后端 import 自检'
 Push-Location "$root\backend"
+# 必须设 VR_DATA_DIR：import app 会连带跑 portfolio.py 的模块级数据迁移。
+# 不设的话这条"只是看看能不能 import"的检查会真的动到 ~/.vibe-research/ 里的用户数据
+# （VR-GOAL-006 实测踩到）。指向沙箱，CI 永远不碰真实持仓。
+$env:VR_DATA_DIR = "$root\.sandbox-data"
 $routes = conda run --no-capture-output -n tradingagents python -c "import app; print(len(app.app.routes))" | Out-String
+Remove-Item Env:\VR_DATA_DIR -ErrorAction SilentlyContinue
 Pop-Location
 if ($routes -match '^\s*(\d+)\s*$') { Write-Host "✓ 通过，$($Matches[1]) 条路由" -ForegroundColor Green }
 else { $failed += 'backend import'; Write-Host "✗ import 失败：$routes" -ForegroundColor Red }

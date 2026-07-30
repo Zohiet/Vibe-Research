@@ -53,12 +53,15 @@ def test_portfolio_crud_roundtrip(tmp_pf):
     assert h["shares"] == 200
     assert h["cost"] == pytest.approx(10.0)
 
-    r = client.post("/api/portfolio/close", json={"code": "600519", "date": "2026-07-05", "price": 11.0, "shares": 200, "cost": 10.0})
+    # VR-GOAL-006：清仓改由减仓覆盖（减到 0 自动移除持仓），原 /portfolio/close 已删除
+    r = client.post("/api/portfolio/reduce",
+                    json={"code": "600519", "shares": 200, "price": 11.0, "date": "2026-07-05"})
     assert r.status_code == 200
-    assert r.json()["data"]["closed"][0]["pnl"] == pytest.approx(200.0)
+    data = r.json()["data"]
+    assert data["holdings"] == []                       # 减到 0 → 持仓移除
+    sells = [t for t in data["transactions"] if t["type"] == "sell"]
+    assert sells[-1]["pnl"] == pytest.approx((11.0 - 10.0) * 200)
 
-    assert client.delete("/api/portfolio/holding?code=600519").json()["data"]["holdings"] == []
-    assert client.delete("/api/portfolio/close?index=0").json()["data"]["closed"] == []
     assert client.post("/api/portfolio/refresh").status_code == 200
 
 
