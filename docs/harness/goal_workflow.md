@@ -151,6 +151,25 @@ git push origin --delete goal/VR-GOAL-XXX_<slug>
 Spec 起草完，**必须跑一轮 `/mattpocock-skills:grilling`**，把里面尚未拍板的开放决策
 逐条质询到收敛，再往下走。
 
+**需求开放时，先 brainstorming 再 grilling：**
+
+| 需求形态 | 流程 |
+|---|---|
+| **开放性**（"我想加个功能，大概是…"，做法有多种、边界没想清） | `/superpowers:brainstorming` **然后** `/mattpocock-skills:grilling` |
+| **明确**（要做什么、怎么做都清楚，只剩取舍要拍板） | 直接 `/mattpocock-skills:grilling` |
+
+**两者不能互相顶替**，它们的方向是相反的：
+
+- **brainstorming 是建设性的**——从想法往上搭，问「你想要什么、哪种做法更好」，产出一个方案
+- **grilling 是对抗性的**——拿着方案往下拆，问「这个方案哪里会塌」，找出方案的裂缝
+
+只做 brainstorming，方案没被攻过；只做 grilling，可能在攻一个方向就选错的方案。
+开放性需求两个都要，顺序不能反。
+
+> 真实教训：VR-GOAL-006 起初只跑了 brainstorming，我在 Spec 里写了句
+> 「与 grilling 同等作用」把它合理化过去——这正是本文档反对的「解释型通过」。
+> 补跑 grilling 才是对的。
+
 **为什么是拷打而不是「请确认验收项」**：后者是被动的是非题，负责人扫一眼说「可以」，
 这道闸就等于没有。本会话 001 / 002 的真实经过是——**所有关键设计都是在拷打里定的**：
 两道闸的存在、三档分层、`--no-ff`、截图改 JPEG、E2E 沙箱隔离，一条都不是我起草时想到的。
