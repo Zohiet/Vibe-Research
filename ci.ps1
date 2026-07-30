@@ -5,8 +5,8 @@
 #   ./ci.ps1          前端类型检查 + 后端离线测试 + 后端 import 自检
 #   ./ci.ps1 -E2E     再追加 Playwright 验收（前提：前后端已启动，见 ./dev.ps1）
 #
-# 退出码 0 = 全绿可发布；非 0 = 有真失败。
-# 注意「后端 1 failed 是 Windows 基线」的判定逻辑，见下方注释。
+# 退出码 0 = 全绿可发布；非 0 = 有失败。
+# 没有豁免、没有「已知失败」白名单——红就是红。任何一条挂了都要修，不要往这里加例外。
 
 param([switch]$E2E)
 
@@ -25,8 +25,8 @@ else { Write-Host '✓ 通过' -ForegroundColor Green }
 Pop-Location
 
 # ── 2. 后端离线测试 ────────────────────────────────────────────────
-# --no-capture-output 必须带：子进程退出码非零时（本项目因基线失败必然非零），
-# conda 会吞掉真实输出、改印一大段崩溃报告。
+# --no-capture-output 必须带：子进程退出码非零时 conda 会吞掉真实输出、
+# 改印一大段崩溃报告，看不到到底哪条测试挂了。
 Section '后端离线测试 (pytest -m "not live")'
 Push-Location "$root\backend"
 # 不要加 2>&1：PowerShell 5.1 会把原生命令的 stderr 每行包成 NativeCommandError
@@ -35,17 +35,10 @@ $pytestOut = conda run --no-capture-output -n tradingagents python -m pytest -q 
 Write-Host $pytestOut
 Pop-Location
 
-# 基线判定：test_run_cli_stream_timeout 在 Windows 上必失败（用例 spawn `python3`，
-# 本机无此命令，退出码 9009）。只有「1 failed 之外的失败」才算真挂。
 if ($pytestOut -match '(\d+) failed') {
     $failCount = [int]$Matches[1]
-    $onlyBaseline = $pytestOut -match 'test_run_cli_stream_timeout'
-    if ($failCount -eq 1 -and $onlyBaseline) {
-        Write-Host '✓ 通过（1 failed 为 Windows 基线：test_run_cli_stream_timeout）' -ForegroundColor Green
-    } else {
-        $failed += "pytest ($failCount failed)"
-        Write-Host "✗ 有 $failCount 条失败，超出基线" -ForegroundColor Red
-    }
+    $failed += "pytest ($failCount failed)"
+    Write-Host "✗ 有 $failCount 条失败" -ForegroundColor Red
 } elseif ($pytestOut -match 'passed') {
     Write-Host '✓ 全部通过' -ForegroundColor Green
 } else {

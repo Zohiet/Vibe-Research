@@ -34,7 +34,7 @@ python -m pytest tests/test_myaccumulation.py -q  # 单文件
 python -m pytest tests/test_pure.py::test_get_prefix -q   # 单个用例
 ```
 
-⚠️ **Windows 上的基线是 `85 passed, 1 failed`**。`tests/test_fixes.py::test_run_cli_stream_timeout` 必失败——用例 spawn `python3`，Windows 上没这个命令（退出码 9009）。这不是你改坏的，别去"修"。
+⚠️ **应当全绿（86 passed），没有已知失败、没有豁免白名单。** 任何一条挂了都要修——不要往 `ci.ps1` 或文档里加「这条不用管」的例外。（本仓库曾养过一条 Windows 专属失败，代价是同一句解释散在五处文档里；根因修掉后不再引入这类豁免。）
 
 前端构建 / 类型检查（仓库无 ESLint / Prettier 配置，`tsc -b` 就是类型闸门）：
 
@@ -132,7 +132,7 @@ docs/goals/  docs/plans/                      docs/screenshots/    docs/acceptan
 ### CI 与验收截图
 
 ```powershell
-./ci.ps1          # 前端 tsc + 后端 pytest + 后端 import 自检（内置基线判定）
+./ci.ps1          # 前端 tsc + 后端 pytest + 后端 import 自检
 ./ci.ps1 -E2E     # 追加 Playwright 验收（需前后端已启动）
 ```
 
