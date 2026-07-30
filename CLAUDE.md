@@ -93,7 +93,7 @@ portfolio / myreports / myaccumulation (本地用户数据)      cli_runtime.py 
 - **`main` = 发布分支**，语义是「已验证、可运行」。唯一入口是 `git merge --ff-only dev`（保持线性历史）；想回到上一个能跑的版本，`git checkout main` 即可。
 - `origin` = `git@github.com:Zohiet/Vibe-Research.git`，是**唯一要管的远程**。
 
-代码源头是 `simonlin1212/Vibe-Research` 的 fork，但**已决定独立开发、不再跟随上游**：不 fetch、不合并、不为迁就上游而改写法。看到「上游有新版本」的念头就停。
+代码源头是 `simonlin1212/Vibe-Research` 的 fork（remote `upstream`），但**已决定独立开发、不再跟随上游**：不定期同步、不为迁就上游而改写法。上游是**按需查阅的只读参考**——用户明确要求时才 `fetch upstream` 去看有什么更新；**看 ≠ 合**，合并要用户单独确认，且优先 cherry-pick 单条而非整体 merge。
 
 发布前必须跑 `npx tsc -b` + `pytest -m "not live"`——本仓库最大的伤害源是 git 不报冲突的**语义冲突**：改了某个模块的 API，别处的调用方悄悄坏掉（真实案例：`addNote` 改异步后 `Debate.tsx` 的调用点类型全错，git 一声不吭）。改动被多处调用的 API 后要 grep 一遍调用方。完整流程与 Windows 坑见用户级 skill `VR-git`。
 
