@@ -17,6 +17,7 @@ import shutil
 import sys
 import threading
 import time
+import uuid
 from datetime import datetime, timezone, timedelta
 
 import astock
@@ -46,6 +47,78 @@ def _migrate_legacy() -> None:
 _migrate_legacy()
 
 
+# ── 交易流水（VR-GOAL-006）────────────────────────────────────────────────
+# holdings 是「当前状态」，transactions 是「怎么变成这样的」。每笔交易存下**操作前的
+# 持仓快照**（prev_shares / prev_cost），撤销 = 把快照原样写回——买卖对称，且不做任何
+# 算术，从根上避开反推加权平均的浮点漂移。
+#
+# 迁移失败时置此标志，所有写操作一律拒绝。理由：这次迁移改的是**文件内容结构**（不像
+# _migrate_legacy 只是搬位置）。失败后若照常放行写入，新代码按新结构 _save 回去，
+# 旧的 closed 记录就永久消失了。宁可暂停功能，不可静默丢数据。
+_MIGRATION_FAILED = False
+
+
+def _new_txn_id() -> str:
+    return uuid.uuid4().hex[:12]
+
+
+def _migrate_transactions() -> None:
+    """旧的 closed 列表 → transactions 流水（补 id、type=sell、不补快照）。
+
+    历史记录没有快照，天然不可撤销——这正是我们要的：它们当年只往 closed 追加、
+    从未配对过持仓变动，"还原"会凭空造出用户根本没有的仓位。
+    """
+    global _MIGRATION_FAILED
+    try:
+        if not os.path.exists(PF_FILE):
+            return
+        with open(PF_FILE, encoding="utf-8") as f:
+            d = json.load(f)
+        if "closed" not in d:  # 已迁移过或本来就是新结构
+            return
+
+        # 先备份：即使后面全都出错，用户也有一份完整的旧数据
+        stamp = datetime.now(BEIJING).strftime("%Y%m%d-%H%M%S")
+        shutil.copy2(PF_FILE, f"{PF_FILE}.bak-{stamp}")
+
+        txns = d.setdefault("transactions", [])
+        for c in d.pop("closed"):
+            txns.append({
+                "id": _new_txn_id(),
+                "code": c.get("code", ""), "name": c.get("name", c.get("code", "")),
+                "date": c.get("date", ""), "type": "sell",
+                "shares": c.get("shares", 0), "price": c.get("price", 0),
+                "pnl": c.get("pnl", 0), "pnl_pct": c.get("pnl_pct", 0),
+                # 刻意不写 prev_shares / prev_cost —— 无快照即不可撤销
+            })
+
+        tmp = PF_FILE + ".migrate-txn.tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False)
+        os.replace(tmp, PF_FILE)  # 原子落位：要么完整落地，要么原文件纹丝不动
+    except (OSError, json.JSONDecodeError) as e:
+        _MIGRATION_FAILED = True
+        print(
+            f"[vibe-research] 持仓交易流水迁移失败，已暂停所有持仓写入以防数据丢失: {e}",
+            file=sys.stderr,
+        )
+
+
+_migrate_transactions()
+
+
+class MigrationBlocked(RuntimeError):
+    """迁移未成功，写操作一律拒绝（app.py 转成 HTTP 503）。"""
+
+
+def _require_migrated() -> None:
+    if _MIGRATION_FAILED:
+        raise MigrationBlocked(
+            "持仓数据迁移未完成，为防止丢失已暂停写入。"
+            f"请检查 {PF_FILE} 的读写权限后重启服务；旧数据仍在同目录的 .bak-* 备份里。"
+        )
+
+
 def _now() -> str:
     return datetime.now(BEIJING).strftime("%Y-%m-%d %H:%M")
 
@@ -67,57 +140,129 @@ def _save(d: dict) -> None:
     os.replace(tmp, PF_FILE)
 
 
+def _quote_name(code: str) -> str:
+    try:
+        return astock.tencent_quote([code]).get(code, {}).get("name", code)
+    except Exception:
+        return code
+
+
 def add_holding(code: str, shares: float, cost: float) -> dict:
-    """加一笔持仓；同代码则按加权平均成本合并（加仓）。"""
+    """加一笔持仓；同代码则按加权平均成本合并（加仓）。同时记一条 buy 流水。"""
+    _require_migrated()
     with _LOCK:
         d = _load()
         for h in d["holdings"]:
             if h["code"] == code:
+                prev_shares, prev_cost = h["shares"], h["cost"]
                 total = h["shares"] + shares
                 # 4 位小数：ETF/基金成本常见 3-4 位（issue #13），2-3 位会让市值/盈亏对不上账
                 h["cost"] = round((h["shares"] * h["cost"] + shares * cost) / total, 4) if total else cost
                 h["shares"] = total
                 break
         else:
+            prev_shares, prev_cost = 0.0, 0.0  # 新建仓：撤销时应整条移除，不留 0 股空记录
             d["holdings"].append({"code": code, "shares": shares, "cost": cost})
-        _save(d)
-    return get_portfolio()
 
-
-def remove_holding(code: str) -> dict:
-    with _LOCK:
-        d = _load()
-        d["holdings"] = [h for h in d["holdings"] if h["code"] != code]
-        _save(d)
-    return get_portfolio()
-
-
-def close_position(code: str, date: str, price: float, shares: float, cost: float) -> dict:
-    """记一笔已清仓：算已实现盈亏，存入 closed 列表。"""
-    pnl = (price - cost) * shares
-    with _LOCK:
-        d = _load()
-        d.setdefault("closed", [])
-        try:
-            name = astock.tencent_quote([code]).get(code, {}).get("name", code)
-        except Exception:
-            name = code
-        d["closed"].append({
-            "code": code, "name": name, "date": date, "price": price,
-            "shares": shares, "cost": cost, "pnl": round(pnl, 2),
-            "pnl_pct": round((price - cost) / cost * 100, 2) if cost else 0.0,
+        d.setdefault("transactions", []).append({
+            "id": _new_txn_id(), "code": code, "name": _quote_name(code),
+            "date": datetime.now(BEIJING).strftime("%Y-%m-%d"), "type": "buy",
+            "shares": shares, "price": cost,
+            "prev_shares": prev_shares, "prev_cost": prev_cost,
         })
         _save(d)
     return get_portfolio()
 
 
-def remove_closed(index: int) -> dict:
+def reduce_holding(code: str, shares: float, price: float, date: str) -> dict:
+    """减仓：按**当前加权平均成本**算已实现盈亏，减到 0 则整条移除，并记一条 sell 流水。
+
+    双写（改 holdings + 加流水）必须原子——拆成两次调用，中途失败就是数据不一致，
+    而"不用手工对账"正是这个功能的立意。全程在 _LOCK 内一次 _save。
+    """
+    _require_migrated()
     with _LOCK:
         d = _load()
-        cl = d.get("closed", [])
-        if 0 <= index < len(cl):
-            cl.pop(index)
-            _save(d)
+        h = next((x for x in d["holdings"] if x["code"] == code), None)
+        if h is None:
+            raise ValueError(f"持仓中没有 {code}")
+        if shares <= 0:
+            raise ValueError("减仓股数必须大于 0")
+        if shares > h["shares"]:
+            raise ValueError(f"减仓股数 {shares} 超过持仓 {h['shares']}")
+
+        prev_shares, prev_cost = h["shares"], h["cost"]
+        pnl = (price - prev_cost) * shares
+        d["transactions"] = d.get("transactions", []) + [{
+            "id": _new_txn_id(), "code": code, "name": _quote_name(code),
+            "date": date, "type": "sell", "shares": shares, "price": price,
+            "prev_shares": prev_shares, "prev_cost": prev_cost,
+            "pnl": round(pnl, 2),
+            "pnl_pct": round((price - prev_cost) / prev_cost * 100, 2) if prev_cost else 0.0,
+        }]
+
+        if shares == prev_shares:
+            d["holdings"] = [x for x in d["holdings"] if x["code"] != code]
+        else:
+            h["shares"] = prev_shares - shares   # 成本不变：卖出不改变剩余持仓的成本
+        _save(d)
+    return get_portfolio()
+
+
+def _is_latest(txn: dict, txns: list) -> bool:
+    """该笔是否是这只代码在流水中最后出现的一条（按追加顺序，不按 date——同日可能多笔）。"""
+    same = [t for t in txns if t.get("code") == txn.get("code")]
+    return bool(same) and same[-1].get("id") == txn.get("id")
+
+
+def can_undo(txn: dict, txns: list) -> bool:
+    """可撤销 = 有快照 && 是该代码的最新一笔。
+
+    无快照的是迁移来的历史记录——它们当年从未配对过持仓变动，"还原"会凭空造出仓位。
+    非最新的不能撤：快照记的是当时的状态，中间已发生别的变化，写回会把后续一起抹掉。
+    """
+    return "prev_shares" in txn and _is_latest(txn, txns)
+
+
+def has_undoable_txn(code: str, txns: list) -> bool:
+    """该代码有没有可撤销的流水——有就不显示行内 🗑（否则撤销会复活已删的持仓）。"""
+    return any(t.get("code") == code and can_undo(t, txns) for t in txns)
+
+
+def undo_transaction(txn_id: str) -> dict:
+    """撤销一笔交易：把操作前的持仓快照原样写回，并删除该条流水。
+
+    不做任何算术——写回而非反推，浮点不会漂移。
+    """
+    _require_migrated()
+    with _LOCK:
+        d = _load()
+        txns = d.get("transactions", [])
+        txn = next((t for t in txns if t.get("id") == txn_id), None)
+        if txn is None:
+            raise ValueError("找不到该交易记录")
+        if not can_undo(txn, txns):
+            raise ValueError(
+                "该记录不可撤销：只有带持仓快照、且是该代码最新一笔的交易才能撤销"
+            )
+
+        code = txn["code"]
+        d["holdings"] = [x for x in d["holdings"] if x["code"] != code]
+        if txn["prev_shares"] > 0:  # 新建仓的那笔 prev_shares==0 → 整条移除，不留空记录
+            d["holdings"].append({
+                "code": code, "shares": txn["prev_shares"], "cost": txn["prev_cost"],
+            })
+        d["transactions"] = [t for t in txns if t.get("id") != txn_id]
+        _save(d)
+    return get_portfolio()
+
+
+def remove_holding(code: str) -> dict:
+    _require_migrated()
+    with _LOCK:
+        d = _load()
+        d["holdings"] = [h for h in d["holdings"] if h["code"] != code]
+        _save(d)
     return get_portfolio()
 
 
@@ -126,6 +271,7 @@ def get_portfolio() -> dict:
     with _LOCK:
         d = _load()
     hs = d.get("holdings", [])
+    txns = d.get("transactions", [])
     rows, tmv, tcost = [], 0.0, 0.0
     if hs:
         try:
@@ -143,11 +289,15 @@ def get_portfolio() -> dict:
                 "price": price, "shares": h["shares"], "cost": h["cost"],
                 "market_value": round(mv, 2), "pnl": round(pnl, 2),
                 "pnl_pct": round(pnl / cv * 100, 2) if cv else 0.0,
+                # 有可撤销流水就不给行内删除按钮——否则「🗑 删掉 → 撤销那笔交易」
+                # 会把快照写回，凭空复活一个已删的持仓
+                "can_delete": not has_undoable_txn(h["code"], txns),
             })
             tmv += mv
             tcost += cv
     total_pnl = tmv - tcost
-    closed = d.get("closed", [])
+    # 每条流水带上能否撤销，前端只读布尔（规则只在后端实现一次）
+    txn_rows = [{**t, "can_undo": can_undo(t, txns)} for t in txns]
     return {
         "holdings": rows,
         "totals": {
@@ -155,8 +305,10 @@ def get_portfolio() -> dict:
             "pnl": round(total_pnl, 2),
             "pnl_pct": round(total_pnl / tcost * 100, 2) if tcost else 0.0,
         },
-        "closed": closed,
-        "realized_pnl": round(sum(c.get("pnl", 0) for c in closed), 2),
+        "transactions": txn_rows,
+        # 只从 sell 累加：buy 不产生已实现盈亏。迁移前后此数值必须相等
+        "realized_pnl": round(sum(t.get("pnl", 0) for t in txns if t.get("type") == "sell"), 2),
+        "migration_blocked": _MIGRATION_FAILED,
         "updated": _now(),
         "last_refresh": d.get("last_refresh"),
     }

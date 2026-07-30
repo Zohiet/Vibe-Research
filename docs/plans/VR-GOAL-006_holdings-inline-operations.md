@@ -1,7 +1,7 @@
 # VR-GOAL-006 实现 Plan ｜ 持仓行内加减仓 + 交易流水
 
 - **Goal Spec**：[`../goals/VR-GOAL-006_holdings-inline-operations.md`](../goals/VR-GOAL-006_holdings-inline-operations.md)
-- **确认状态**：⬜ 待确认
+- **确认状态**：✅ 已确认（2026-07-30，第二道闸通过）
 
 > **未经确认不得开始写代码。**
 >

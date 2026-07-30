@@ -93,7 +93,8 @@ def test_zero_shares_rejected():
     assert client.post("/api/portfolio/holding", json={"code": "600519", "shares": 0, "cost": 10}).status_code == 400
 
 
-def test_close_bad_date_400():
-    r = client.post("/api/portfolio/close",
-                    json={"code": "600519", "date": "2025-13-45", "price": 10, "shares": 100, "cost": 5})
+def test_reduce_bad_date_400():
+    # VR-GOAL-006：/portfolio/close 已删除，日期校验移到 /portfolio/reduce
+    r = client.post("/api/portfolio/reduce",
+                    json={"code": "600519", "shares": 100, "price": 10, "date": "2025-13-45"})
     assert r.status_code == 400

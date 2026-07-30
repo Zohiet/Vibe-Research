@@ -70,6 +70,27 @@ export async function expectNumericLike(loc: Locator, label = "数值") {
   expect(text, `${label} 应含数字，实际是「${text}」`).toMatch(/\d/);
 }
 
+/**
+ * 把沙箱数据清空，让每个会写数据的 spec 从干净状态开始。
+ *
+ * 为什么需要：所有 spec 共用同一个沙箱实例（playwright.config 是 workers:1 串行跑）。
+ * 一旦某个 spec 中途失败，残留的持仓会污染后面的 spec——排查时会误以为是新代码坏了。
+ *
+ * 直接删数据文件而不是走 API：后端每次读盘、无缓存；而走 API 清理需要按顺序撤销
+ * 每一笔流水（有可撤销流水时删除按钮本就被禁用），既慢又和被测逻辑纠缠。
+ *
+ * **先 assertSandbox 再删**——绝不能让这个函数有任何机会删到真实数据目录。
+ */
+export async function resetSandbox(page: Page) {
+  await assertSandbox(page);
+  const f = path.join(REPO_ROOT, ".sandbox-data", "portfolio.json");
+  try {
+    fs.unlinkSync(f);
+  } catch {
+    /* 本来就没有，正是我们要的状态 */
+  }
+}
+
 /** 后端健康检查——验收脚本开头调，把「后端没起」和「功能坏了」区分开。 */
 export async function assertBackendUp(page: Page) {
   const resp = await page.request.get("/api/health");

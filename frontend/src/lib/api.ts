@@ -183,16 +183,28 @@ export interface RadarData {
 export interface Holding {
   code: string; name: string; price: number; shares: number; cost: number;
   market_value: number; pnl: number; pnl_pct: number;
+  /** 有可撤销流水时为 false —— 此时不给行内删除按钮，否则「删掉 → 撤销那笔交易」
+   *  会把快照写回、凭空复活一个已删的持仓（VR-GOAL-006 决策 #6）。后端算，前端只读。 */
+  can_delete: boolean;
 }
-export interface ClosedPosition {
-  code: string; name: string; date: string; price: number; shares: number; cost: number;
-  pnl: number; pnl_pct: number;
+/** 交易流水：买卖同表。prev_* 是操作前的持仓快照，撤销即写回它。 */
+export interface Transaction {
+  id: string; code: string; name: string; date: string;
+  type: "buy" | "sell";
+  shares: number; price: number;
+  /** 迁移来的历史记录没有快照 → 天然不可撤销 */
+  prev_shares?: number; prev_cost?: number;
+  pnl?: number; pnl_pct?: number;
+  /** 可撤销 = 有快照 && 是该代码最新一笔。后端算，前端只读。 */
+  can_undo: boolean;
 }
 export interface PortfolioData {
   holdings: Holding[];
   totals: { market_value: number; cost: number; pnl: number; pnl_pct: number };
-  closed: ClosedPosition[];
+  transactions: Transaction[];
   realized_pnl: number;
+  /** 数据迁移失败时为 true：写操作已被后端暂停（503），只能读 */
+  migration_blocked: boolean;
   updated: string; last_refresh: string | null;
 }
 
@@ -252,9 +264,11 @@ export const api = {
   addHolding: (code: string, shares: number, cost: number) => request<PortfolioData>("/portfolio/holding", "POST", { code, shares, cost }),
   removeHolding: (code: string) => request<PortfolioData>(`/portfolio/holding?code=${code}`, "DELETE"),
   refreshPortfolio: () => request<PortfolioData>("/portfolio/refresh", "POST"),
-  closePosition: (code: string, date: string, price: number, shares: number, cost: number) =>
-    request<PortfolioData>("/portfolio/close", "POST", { code, date, price, shares, cost }),
-  removeClosed: (index: number) => request<PortfolioData>(`/portfolio/close?index=${index}`, "DELETE"),
+  /** 减仓：后端按当前加权平均成本算已实现盈亏，减到 0 自动移除持仓 */
+  reduceHolding: (code: string, shares: number, price: number, date: string) =>
+    request<PortfolioData>("/portfolio/reduce", "POST", { code, shares, price, date }),
+  /** 撤销一笔交易：把操作前的持仓快照原样写回 */
+  undoTransaction: (id: string) => request<PortfolioData>(`/portfolio/transaction/${id}`, "DELETE"),
   valuation: (code: string) => get<Valuation>(`/valuation?code=${code}`),
   percentile: (code: string) => get<ValPercentile>(`/valuation/percentile?code=${code}`),
   financials: (code: string) => get<Financials>(`/financials?code=${code}`),

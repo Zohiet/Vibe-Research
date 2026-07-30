@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -207,21 +208,66 @@ def portfolio_get():
         raise HTTPException(502, f"持仓读取异常：{e}") from e
 
 
+class ReduceIn(BaseModel):
+    code: str
+    shares: float
+    price: float
+    date: str
+
+
 @app.post("/api/portfolio/holding")
 def portfolio_add(h: HoldingIn):
-    """加一笔持仓（同代码按加权平均成本合并）。存本地，不上传。"""
+    """加仓（同代码按加权平均成本合并），同时记一条 buy 流水。存本地，不上传。"""
     code = (h.code or "").strip()
     if not code.isdigit() or len(code) != 6:
         raise HTTPException(400, "代码必须是 6 位数字")
     if h.shares <= 0:
         raise HTTPException(400, "数量必须大于 0")
     # 成本价不限正负：融券 / 返息 / 摊薄后为负成本等情形按结果计算，用户想怎么输就怎么输。
-    return {"data": pf.add_holding(code, h.shares, h.cost)}
+    try:
+        return {"data": pf.add_holding(code, h.shares, h.cost)}
+    except pf.MigrationBlocked as e:
+        raise HTTPException(503, str(e)) from e
+
+
+@app.post("/api/portfolio/reduce")
+def portfolio_reduce(r: ReduceIn):
+    """减仓：按当前加权平均成本算已实现盈亏，减到 0 移除持仓，并记一条 sell 流水。"""
+    code = (r.code or "").strip()
+    if not code.isdigit() or len(code) != 6:
+        raise HTTPException(400, "代码必须是 6 位数字")
+    if r.price <= 0:
+        raise HTTPException(400, "卖出价必须大于 0")
+    date = (r.date or "").strip()
+    try:
+        datetime.strptime(date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(400, "日期格式应为 YYYY-MM-DD") from None
+    try:
+        return {"data": pf.reduce_holding(code, r.shares, r.price, date)}
+    except pf.MigrationBlocked as e:
+        raise HTTPException(503, str(e)) from e
+    except ValueError as e:  # 股数 <=0 / 超过持仓 / 代码不在持仓中
+        raise HTTPException(400, str(e)) from e
+
+
+@app.delete("/api/portfolio/transaction/{txn_id}")
+def portfolio_undo(txn_id: str):
+    """撤销一笔交易：把操作前的持仓快照原样写回，并删除该条流水。"""
+    try:
+        return {"data": pf.undo_transaction(txn_id.strip())}
+    except pf.MigrationBlocked as e:
+        raise HTTPException(503, str(e)) from e
+    except ValueError as e:  # 找不到 / 不可撤销
+        raise HTTPException(400, str(e)) from e
 
 
 @app.delete("/api/portfolio/holding")
 def portfolio_remove(code: str = Query(...)):
-    return {"data": pf.remove_holding(code.strip())}
+    try:
+        return {"data": pf.remove_holding(code.strip())}
+    except pf.MigrationBlocked as e:
+        raise HTTPException(503, str(e)) from e
 
 
 # ---- 我的研报（用户上传自己的研报，存本地、不上传、不进开源仓库）----
@@ -308,39 +354,6 @@ def myaccumulation_clear():
 @app.delete("/api/myaccumulation/{nid}")
 def myaccumulation_delete(nid: str):
     return {"data": {"ok": ma.delete_note(nid)}}
-
-
-class CloseIn(BaseModel):
-    code: str
-    date: str
-    price: float
-    shares: float
-    cost: float
-
-
-@app.post("/api/portfolio/close")
-def portfolio_close(c: CloseIn):
-    """记一笔已清仓（已实现盈亏）。存本地。"""
-    code = (c.code or "").strip()
-    if not code.isdigit() or len(code) != 6:
-        raise HTTPException(400, "代码必须是 6 位数字")
-    if c.price <= 0 or c.shares <= 0:
-        raise HTTPException(400, "清仓价与股数必须大于 0")
-    # 买入成本不限正负（同持仓录入）：按 (清仓价 - 成本) × 股数 的结果计算已实现盈亏。
-    date = (c.date or "").strip()
-    if not date:
-        raise HTTPException(400, "请填清仓日期")
-    from datetime import datetime
-    try:
-        datetime.strptime(date, "%Y-%m-%d")
-    except ValueError:
-        raise HTTPException(400, "清仓日期格式应为 YYYY-MM-DD") from None
-    return {"data": pf.close_position(code, date, c.price, c.shares, c.cost)}
-
-
-@app.delete("/api/portfolio/close")
-def portfolio_close_remove(index: int = Query(...)):
-    return {"data": pf.remove_closed(index)}
 
 
 @app.post("/api/portfolio/refresh")
