@@ -97,6 +97,25 @@ portfolio / myreports / myaccumulation (本地用户数据)      cli_runtime.py 
 
 发布前必须跑 `npx tsc -b` + `pytest -m "not live"`——本仓库最大的伤害源是 git 不报冲突的**语义冲突**：改了某个模块的 API，别处的调用方悄悄坏掉（真实案例：`addNote` 改异步后 `Debate.tsx` 的调用点类型全错，git 一声不吭）。改动被多处调用的 API 后要 grep 一遍调用方。完整流程与 Windows 坑见用户级 skill `VR-git`。
 
+### harness：这些流程已经自动化了
+
+`.claude/` 里的配置**随仓库走**（只有 `settings.local.json` 不入库），所以下面这些在任何机器上 clone 下来都直接生效：
+
+| 入口 | 作用 |
+|---|---|
+| `/vr-check` | 跑全套验证并判读结果（含「1 failed 是基线」的说明） |
+| `/vr-release` | dev → main 完整发布：前置检查 → 验证 → `--ff-only` → push → 切回 dev |
+| `/vr-dev` | 后台起前后端并做健康检查 |
+| `/vr-upstream` | 只读查看上游更新，看完停下 |
+
+三个 hook（`.claude/hooks/`，配置在 `.claude/settings.json`）：
+
+- **在 `main` 上执行 `git commit` 会被直接拦截**（`guard-branch.sh`）——想提交就先切 dev。
+- 会话开始时自动注入当前分支 / dev 领先 main 多少 / 工作区脏不脏（`session-context.sh`）。
+- 每轮结束后**后台跑 `tsc -b`**，仅在工作区有 `.ts/.tsx` 改动时触发；失败会带着报错唤醒继续修（`typecheck.sh`）。嫌吵就删掉 `settings.json` 里的 `Stop` 那段。
+
+`permissions.deny` 挡死了 `git push upstream*` 和强推。
+
 ### vendored 数据源
 
 `a-stock-data/`、`global-stock-data/` 是上游仓库的**固定快照**，其 `SKILL.md` 内嵌全部可运行调用代码、自包含。`backend/astock.py` / `gstock.py` 是从它们移植的子集。需要仓库里没有的 A 股端点（打板 / ETF 期权 / 全市场行业排名等）时，先查 `a-stock-data/SKILL.md`，不要另起炉灶写抓取。

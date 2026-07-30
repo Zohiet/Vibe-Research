@@ -30,7 +30,9 @@ build/
 frontend/tsconfig.tsbuildinfo
 
 # ── 编辑器 / 系统 / 工具 ──────────────────────────────────────────
-**/.claude/
+# .claude/ 里 settings.json + commands/ + hooks/ 是项目 harness，**入库**跟着仓库走；
+# 只有本机个性化的 settings.local.json 不进仓库。
+**/.claude/settings.local.json
 .DS_Store
 *.log
 .vscode/

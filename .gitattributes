@@ -1,0 +1,4 @@
+# 仓库 core.autocrlf=true（Windows 开发机），检出时默认把 LF 转成 CRLF。
+# 但 shell 脚本一旦带 \r，bash 会报 `$'\r': command not found` 直接失效——
+# .claude/hooks/ 里的 hook 脚本会在任何新 clone 上静默罢工。强制它们保持 LF。
+*.sh text eol=lf
