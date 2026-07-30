@@ -32,7 +32,7 @@
 |---|---|---|---|
 | 1 | 闭环分三档，按改动性质判定 | 已达成 | `goal_workflow.md` §「三档：先判这次要走多重」——三档各列产物、闸门数、分支；附前缀反推映射与例外要求 |
 | 2 | 两道人工闸门；验收报告无 AI 自填结论栏 | 已达成 | `goal_workflow.md` §「两道闸」；`templates/acceptance.md` 顶部改为「状态：待签字」+ 文末「三、验收签字」栏；`templates/goal.md` 在验收项后插入「写到这里就停」 |
-| 3 | 完整档走 `goal/*` + `--no-ff` | **部分达成** | 文档已写明（`goal_workflow.md` §分支）；本 Goal 自身确在 `goal/VR-GOAL-001_harness-revision` 上完成（见附录 git log）。但 `--no-ff` 合并要在签字后才发生，**此刻无法提供合并后的历史形状作为证据** |
+| 3 | 完整档走 `goal/*` + `--no-ff` | 已达成（**签字后补齐**） | 文档已写明（`goal_workflow.md` §分支）；本 Goal 在 `goal/VR-GOAL-001_harness-revision` 上完成，签字后以 `--no-ff` 并回 dev，合并提交 `da656f3` 有两个父提交 —— 整个 Goal 可用 `git revert -m 1 da656f3` 一条命令整体撤销。见附录「分支形状」 |
 | 4 | 截图改 JPEG，单张 < 100 KB | 已达成 | `docs/screenshots/_smoke/01_每日复盘首屏.jpg` = **62 KB**（原 PNG 225 KB）。见附录「验收证据」 |
 | 5 | 本地测试零失败，总数 ≥ 86 | 已达成 | `86 passed, 11 deselected`，输出中无 `failed`。见附录 CI |
 | 6 | 基线文档债清零；`ci.ps1` 任何失败判红 | **部分达成** | `1 failed` / `85 passed` 已全部消失；`ci.ps1` 的 `onlyBaseline` / `failCount -eq 1` 分支已拆除（grep 无命中）。**但「基线」一词仍在 1 处出现**——详见下方「与 Plan 的偏差」 |
@@ -150,15 +150,29 @@ $ grep -n "onlyBaseline\|failCount -eq 1" ci.ps1
 （无输出 —— 豁免分支已拆除）
 ```
 
-**分支形状（验收项 3）**
+**分支形状（验收项 3）** —— 签字合并后补录
 
 ```
-$ git log --oneline --graph -5
-* 42189dd feat: VR-GOAL-001 修订 harness 闭环——去掉自证与文档债
-* 2efb41e docs: VR-GOAL-001 实现 Plan（等第二道闸）+ Goal Spec 标记第一道闸通过
-* 2b3b276 docs: VR-GOAL-001 Goal Spec 草稿（等第一道闸）
-* 52ef468 docs: upstream 定位改为「按需查阅的只读参考」   ← dev 的分叉点
+$ git log --oneline --graph -8
+*   da656f3 Merge: VR-GOAL-001 按拷打结论修订 harness 闭环
+|\
+| * 4ba846b docs: VR-GOAL-001 验收签收记录
+| * ea2ff89 docs: VR-GOAL-001 验收报告（待签字）
+| * 42189dd feat: VR-GOAL-001 修订 harness 闭环——去掉自证与文档债
+| * 2efb41e docs: VR-GOAL-001 实现 Plan（等第二道闸）+ Goal Spec 标记第一道闸通过
+| * 2b3b276 docs: VR-GOAL-001 Goal Spec 草稿（等第一道闸）
+|/
+* 7bcf62a feat(harness): 落地 Harness Engineering 交付闭环   ← dev 的分叉点
+
+$ git log --merges -1 --format="%h 父提交: %p"
+da656f3 父提交: 7bcf62a 4ba846b
 ```
+
+合并提交有两个父提交 → 整个 Goal 是历史上的一个可整体撤销单元：
+`git revert -m 1 da656f3` 一条命令即可退回。这正是坚持 `--no-ff` 的目的。
+
+合并提交正文即本 Goal 的**合并记录**（Goal / 改了什么 / 为什么改 / 如何验证 / 风险点 /
+是否影响本地用户数据），`git show da656f3` 可查。
 
 ## 改动文件
 
