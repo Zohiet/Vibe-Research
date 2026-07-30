@@ -10,6 +10,20 @@ Vibe-Research：开源的「个人 AI 投研看板」，主 A 股、兼看美股
 
 结构：`backend/` FastAPI(:8900) + `frontend/` Vite+React19+TS+Tailwind(:5899) + 两个 vendored 数据源工具箱 `a-stock-data/`、`global-stock-data/`。
 
+## 📌 先读这三份：本项目的交付纪律
+
+**动手写代码前必须先读。** 本文件只讲**技术事实**（架构、约定、坑）；**怎么交付**由这三份定义，各管一段、互不重复：
+
+| 文档 | 管什么 |
+|---|---|
+| [`docs/harness/Harness_Engineering_项目开发规范.md`](docs/harness/Harness_Engineering_项目开发规范.md) | 闭环必须有哪些产物、完成定义 |
+| [`docs/harness/goal_workflow.md`](docs/harness/goal_workflow.md) | **三档怎么判、两道人工闸门、`goal/*` 分支与 `--no-ff` 合并、验收证据形态** |
+| [`docs/harness/agent_workflow.md`](docs/harness/agent_workflow.md) | **提交前缀口径、合并记录模板、agent 边界（哪些动作必须先问）、快通道** |
+
+一句话概括：开发单位是 `VR-GOAL-XXX_<slug>`；按改动性质分**豁免 / 轻量 / 完整**三档；完整档要过**两道人工闸门**（验收项确认、Plan 确认），且**代码写完不算完成**——要有证据、要负责人签字才能发布到 `main`。
+
+git 命令的执行细节、冲突高发位置、Windows 坑见用户级 skill **`VR-git`**。
+
 ## 常用命令
 
 本机开发（Windows，Python 依赖装在 conda 环境 `tradingagents`，仓库内**没有** `.venv`）：
@@ -87,41 +101,22 @@ portfolio / myreports / myaccumulation (本地用户数据)      cli_runtime.py 
 - 涨跌配色沿用 A 股习惯**红涨绿跌**，全球市场板块也一样（已确认非 bug）。
 - 用户私有数据（自选股、AI key、访问 key）只存 localStorage；持仓 / 研报 / 沉淀走后端文件。
 
-### git：dev 开发 / main 发布
+### git 与远程
 
-- **`dev` = 日常开发分支**，写代码前先 `git branch --show-current` 确认在这儿。
-- **`main` = 发布分支**，语义是「已验证、可运行」。唯一入口是 `git merge --ff-only dev`（保持线性历史）；想回到上一个能跑的版本，`git checkout main` 即可。
-- `origin` = `git@github.com:Zohiet/Vibe-Research.git`，是**唯一要管的远程**。
+- `origin` = `git@github.com:Zohiet/Vibe-Research.git`，**唯一要管的远程**。
+- 代码源头是 `simonlin1212/Vibe-Research` 的 fork（remote `upstream`），但**已决定独立开发、不再跟随上游**。上游是**按需查阅的只读参考**——用户明确要求时才 `fetch` 去看；**看 ≠ 合**，合并要单独确认且优先 cherry-pick 单条。
+- 分支模型与合并流程见 [`goal_workflow.md`](docs/harness/goal_workflow.md)，git 执行细节见 skill `VR-git`。
 
-代码源头是 `simonlin1212/Vibe-Research` 的 fork（remote `upstream`），但**已决定独立开发、不再跟随上游**：不定期同步、不为迁就上游而改写法。上游是**按需查阅的只读参考**——用户明确要求时才 `fetch upstream` 去看有什么更新；**看 ≠ 合**，合并要用户单独确认，且优先 cherry-pick 单条而非整体 merge。
+**本仓库最大的伤害源是 git 不报冲突的语义冲突**：改了某个模块的 API，别处的调用方悄悄坏掉（真实案例：`addNote` 改异步后 `Debate.tsx` 的调用点类型全错，git 一声不吭）。改动被多处调用的 API 后**必须 grep 一遍调用方**。
 
-发布前必须跑 `npx tsc -b` + `pytest -m "not live"`——本仓库最大的伤害源是 git 不报冲突的**语义冲突**：改了某个模块的 API，别处的调用方悄悄坏掉（真实案例：`addNote` 改异步后 `Debate.tsx` 的调用点类型全错，git 一声不吭）。改动被多处调用的 API 后要 grep 一遍调用方。完整流程与 Windows 坑见用户级 skill `VR-git`。
-
-## Harness Engineering：本项目的交付纪律
-
-**这是本仓库的核心工作方式，动手写代码前先读 [`docs/harness/goal_workflow.md`](docs/harness/goal_workflow.md)。**
-
-开发单位是 `VR-GOAL-XXX_<slug>`——一个可验收的垂直切片。闭环五步：
-
-```
-Goal Spec → 实现 Plan →（等人确认）→ 实现 → ci.ps1 + Playwright 截图 → 验收报告
-docs/goals/  docs/plans/                      docs/screenshots/    docs/acceptance/
-```
-
-**最关键的一条：Plan 必须经负责人确认后才能写代码。** 这道闸门挡的是按错误口径实现完再返工、以及自作主张扩大范围。
-
-**代码写完不算完成**：Goal/Plan/Acceptance 三份齐全、Plan 已确认、CI 绿、截图入库、每条验收项判定通过、diff 已复查——全齐才能发布到 `main`。规范全文见 [`docs/harness/Harness_Engineering_项目开发规范.md`](docs/harness/Harness_Engineering_项目开发规范.md)。
-
-纯文档、错别字、README 小修、无行为变化的整理**可豁免**，但提交信息里要写明豁免理由。别为走流程而走流程。
-
-### 命令入口
+## 命令入口
 
 `.claude/` 随仓库走（只有 `settings.local.json` 不入库），clone 到任何机器都直接生效：
 
 | 入口 | 作用 |
 |---|---|
-| `/vr-goal <一句话需求>` | 开新 Goal：判断是否豁免 → 取编号 → 写 Goal Spec + Plan → **停下等确认** |
-| `/vr-accept VR-GOAL-XXX` | 走验收：CI + 截图 → 写验收报告 → 核对完成定义 |
+| `/vr-goal <一句话需求>` | 开新 Goal：判档位 → 取编号 → 写 Goal Spec + Plan → **停下等闸** |
+| `/vr-accept VR-GOAL-XXX` | 走验收：CI + 证据 → 写验收报告 → 交签字 |
 | `/vr-check` | 只跑验证（等价 `./ci.ps1`） |
 | `/vr-release` | 发布：查完成定义 → 验证 → `--ff-only` → push → 切回 dev |
 | `/vr-dev` | 后台起前后端并健康检查 |
@@ -129,21 +124,33 @@ docs/goals/  docs/plans/                      docs/screenshots/    docs/acceptan
 
 `permissions.deny` 挡死了 `git push upstream*` 和强推。**目前没有配 hook**——试过一版（main 上提交拦截 / 自动 typecheck），判断为冗余已移除，需要时可从 commit `d4dfcb3` 取回。
 
-### CI 与验收截图
+## CI 与 E2E
 
 ```powershell
 ./ci.ps1          # 前端 tsc + 后端 pytest + 后端 import 自检
-./ci.ps1 -E2E     # 追加 Playwright 验收（需前后端已启动）
+./ci.ps1 -E2E     # 追加 Playwright 验收（需先 ./dev.ps1 -Sandbox）
 ```
 
-Playwright 配置在 `frontend/playwright.config.ts`，脚本在 `frontend/e2e/`，
-公共工具 `e2e/_helpers.ts`（`shot()` 归档截图 / `watchConsole()` 查错 / `expectNumericLike()` 验数字形状）。
+另有 GitHub Actions（`.github/workflows/ci.yml`）在 push 时于 Linux 上独立跑 tsc + pytest。刻意不跑 Playwright——页面数据来自国内财经接口，美国 runner 打不通。
 
-写验收脚本三条纪律：**一张图证明一条验收项**；**等语义状态不等时间**（实时行情快慢不定，`waitForTimeout` 必然间歇性失败）；**不断言具体行情数值**（明天就变，只验非空和格式）。
+### ⚠️ E2E 必须跑在沙箱上
 
-两个环境坑已在配置里注掉，改的时候别踩回去：
+`~/.vibe-research/` 下是**真实持仓**。验收脚本会真的点「增加/删除」，打错实例就是改你的真钱记录。
+
+```powershell
+./dev.ps1              # 日常看盘：后端 :8900 + 前端 :5899，真实数据
+./dev.ps1 -Sandbox     # E2E 专用：后端 :8901 + 前端 :5900，数据落 .sandbox-data/
+```
+
+两套可同时开。三道防线：Playwright `baseURL` 默认指 `:5900`；**会写数据的脚本第一行必须 `await assertSandbox(page)`**（断言 `/api/health` 的 `sandbox` 字段为 true）；`ci.ps1 -E2E` 先探测沙箱，不在就报错而非退回打真实实例。
+
+写验收脚本的纪律见 [`goal_workflow.md`](docs/harness/goal_workflow.md)。公共工具在 `e2e/_helpers.ts`（`shot()` / `watchConsole()` / `expectNumericLike()` / `assertSandbox()`）。
+
+### 三个环境坑，改的时候别踩回去
+
 - `.ps1` 脚本**必须存成 UTF-8 with BOM**，否则 PowerShell 5.1 按 GBK 解码中文，会连带把 `{}` 配对搞乱、直接语法错。
 - Playwright 的 `baseURL` 用 **`localhost`** 而非 `127.0.0.1`——vite dev server 只监听 IPv6 回环 `[::1]`（正好是 `vite.config.ts` 里 issue #8 的镜像情况：后端只听 IPv4 所以代理必须写 `127.0.0.1`）。
+- 持仓页上「添加持仓」和「添加清仓记录」两个表单的 placeholder **完全相同**，E2E 选择器必须限定到具体卡片（`div:has(> h3:text-is("添加持仓"))`），否则 strict mode violation。
 
 ### vendored 数据源
 

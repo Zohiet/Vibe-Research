@@ -22,10 +22,14 @@ export default defineConfig({
   reporter: [["list"]],
 
   use: {
+    // 默认打 :5900 —— **沙箱前端**（./dev.ps1 -Sandbox），不是日常看盘的 :5899。
+    // 验收脚本会真的增删持仓，打 5899 就等于改用户的真钱记录。
+    // 会写数据的脚本还必须调 assertSandbox() 做硬断言，端口约定只是第一道。
+    //
     // 用 localhost 而不是 127.0.0.1：vite dev server 在本机只监听 IPv6 回环 [::1]，
     // 打 127.0.0.1 会直接连不上（这是 vite.config.ts 里 issue #8 的镜像情况——
     // 那边是后端只听 IPv4 所以代理必须写 127.0.0.1，这边前端只听 IPv6 所以必须写 localhost）。
-    baseURL: process.env.VR_E2E_BASE_URL || "http://localhost:5899",
+    baseURL: process.env.VR_E2E_BASE_URL || "http://localhost:5900",
     // 失败时才留 trace，省磁盘
     trace: "retain-on-failure",
     screenshot: "off", // 截图由 spec 显式控制文件名，不用自动截图

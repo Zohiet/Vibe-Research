@@ -73,7 +73,15 @@ def _validate(code: str) -> str:
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "service": "vibe-research-api", "version": "0.2.2"}
+    # sandbox：本实例是否跑在隔离的数据目录上（即 VR_DATA_DIR 被显式设置）。
+    # E2E 验收脚本靠它做硬断言——没有这个字段，"E2E 不会碰真实持仓" 就只是约定而非保证。
+    # 只暴露布尔值、不含路径；health 本就是鉴权豁免端点，不引入信息泄露。
+    return {
+        "ok": True,
+        "service": "vibe-research-api",
+        "version": "0.2.2",
+        "sandbox": bool(os.environ.get("VR_DATA_DIR", "").strip()),
+    }
 
 
 class LLMConfig(BaseModel):
