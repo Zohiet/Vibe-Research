@@ -20,7 +20,7 @@ Vibe-Research：开源的「个人 AI 投研看板」，主 A 股、兼看美股
 | [`docs/harness/goal_workflow.md`](docs/harness/goal_workflow.md) | **三档怎么判、两道人工闸门、`goal/*` 分支与 `--no-ff` 合并、验收证据形态** |
 | [`docs/harness/agent_workflow.md`](docs/harness/agent_workflow.md) | **提交前缀口径、合并记录模板、agent 边界（哪些动作必须先问）、快通道** |
 
-一句话概括：开发单位是 `VR-GOAL-XXX_<slug>`；按改动性质分**豁免 / 轻量 / 完整**三档；完整档要过**两道人工闸门**（验收项确认、Plan 确认），且**代码写完不算完成**——要有证据、要负责人签字才能发布到 `main`。
+一句话概括：开发单位是 `VR-GOAL-XXX_<slug>`；按改动性质分**豁免 / 轻量 / 完整**三档；完整档要过**两道人工闸门**（验收项确认、Plan 确认），且**代码写完不算完成**——要有证据、要写验收报告才能发布到 `main`。
 
 git 命令的执行细节、冲突高发位置、Windows 坑见用户级 skill **`VR-git`**。
 
@@ -116,7 +116,7 @@ portfolio / myreports / myaccumulation (本地用户数据)      cli_runtime.py 
 | 入口 | 作用 |
 |---|---|
 | `/vr-goal <一句话需求>` | 开新 Goal：判档位 → 取编号 → 写 Goal Spec + Plan → **停下等闸** |
-| `/vr-accept VR-GOAL-XXX` | 走验收：CI + 证据 → 写验收报告 → 交签字 |
+| `/vr-accept VR-GOAL-XXX` | 走验收：CI + 证据 → 写验收报告（不阻塞） |
 | `/vr-check` | 只跑验证（等价 `./ci.ps1`） |
 | `/vr-release` | 发布：查完成定义 → 验证 → `--ff-only` → push → 切回 dev |
 | `/vr-dev` | 后台起前后端并健康检查 |

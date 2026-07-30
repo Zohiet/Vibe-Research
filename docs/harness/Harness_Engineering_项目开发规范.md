@@ -32,10 +32,10 @@
 
 ## 完成定义
 
-代码写完不算完成。完整档的 Goal 只有在 Goal/Plan/Acceptance 齐全、两道闸都已通过、`./ci.ps1` 与 GitHub Actions 均全绿（**无豁免、无已知失败白名单**）、每条验收项都有可回看的证据、diff 已复查、**负责人已签字**之后，才可并回 `dev` 并发布到 `main`。
+代码写完不算完成。完整档的 Goal 只有在 Goal/Plan/Acceptance 齐全、两道闸都已通过、`./ci.ps1` 与 GitHub Actions 均全绿（**无豁免、无已知失败白名单**）、每条验收项都有可回看的证据、diff 已复查之后，即可并回 `dev` 并发布到 `main`。
 
 ## 与本仓库既有约定的关系
 
-- **分支**：完整档在 `goal/VR-GOAL-XXX_<slug>` 上做、验收签字后 `--no-ff` 并回 `dev`；轻量档与豁免档直接提在 `dev`。`dev → main` 用 `--ff-only`。Harness 的完成定义与 `main` 的「已验证、可运行」语义是同一件事。
+- **分支**：完整档在 `goal/VR-GOAL-XXX_<slug>` 上做、验收报告写完即 `--no-ff` 并回 `dev`；轻量档与豁免档直接提在 `dev`。`dev → main` 用 `--ff-only`。Harness 的完成定义与 `main` 的「已验证、可运行」语义是同一件事。
 - **合规红线**优先于本规范：不荐股、不预测涨跌、不给买卖时机；打板原始池只能聚合成不含个股名的指标。任何 Goal 都不得为了「做出效果」突破这条。
 - **本规范原文来自 datagov 项目**，已按 Vibe-Research 实际形态改写（`DG-GOAL`→`VR-GOAL`、`development`→`main`、`make ci`→`./ci.ps1`；本项目无 docker、无数据库迁移，相应条目替换为落盘格式与数据源）。
