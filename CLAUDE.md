@@ -87,15 +87,15 @@ portfolio / myreports / myaccumulation (本地用户数据)      cli_runtime.py 
 - 涨跌配色沿用 A 股习惯**红涨绿跌**，全球市场板块也一样（已确认非 bug）。
 - 用户私有数据（自选股、AI key、访问 key）只存 localStorage；持仓 / 研报 / 沉淀走后端文件。
 
-### git：dev 开发 / main 发布，且这是个跟着活跃上游跑的 fork
+### git：dev 开发 / main 发布
 
 - **`dev` = 日常开发分支**，写代码前先 `git branch --show-current` 确认在这儿。
-- **`main` = 发布分支**，语义是「已验证、可运行」。只接收验证通过的 dev（`git merge --ff-only dev`，保持线性历史），也是同步上游的落点。
-- `origin` = `git@github.com:Zohiet/Vibe-Research.git`（自己的 fork，可推），`upstream` = `simonlin1212/Vibe-Research`（**只读，永不推**）。
+- **`main` = 发布分支**，语义是「已验证、可运行」。唯一入口是 `git merge --ff-only dev`（保持线性历史）；想回到上一个能跑的版本，`git checkout main` 即可。
+- `origin` = `git@github.com:Zohiet/Vibe-Research.git`，是**唯一要管的远程**。
 
-上游更新很快，**本地很容易悄悄落后几十个提交**，在过期基点上开发必然换来一场大合并。上游改动一律先落 main 再并进 dev，冲突在 dev 里解、不污染 main。
+代码源头是 `simonlin1212/Vibe-Research` 的 fork，但**已决定独立开发、不再跟随上游**：不 fetch、不合并、不为迁就上游而改写法。看到「上游有新版本」的念头就停。
 
-发布前必须跑 `npx tsc -b` + `pytest -m "not live"`——本仓库最大的伤害源是 git 不报冲突的**语义冲突**（改了某个模块的 API，上游新增的调用方悄悄坏掉）。完整流程、冲突高发位置、Windows 坑见用户级 skill `VR-git`。
+发布前必须跑 `npx tsc -b` + `pytest -m "not live"`——本仓库最大的伤害源是 git 不报冲突的**语义冲突**：改了某个模块的 API，别处的调用方悄悄坏掉（真实案例：`addNote` 改异步后 `Debate.tsx` 的调用点类型全错，git 一声不吭）。改动被多处调用的 API 后要 grep 一遍调用方。完整流程与 Windows 坑见用户级 skill `VR-git`。
 
 ### vendored 数据源
 
