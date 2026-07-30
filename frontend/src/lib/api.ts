@@ -36,6 +36,11 @@ export interface MyReport {
   id: string; name: string; industry: string; size: number; ext: string; ts: number;
 }
 
+// 沉淀（研究记录）—— 后端落本机磁盘（~/.vibe-research/myaccumulation/），一条一个 markdown 文件。
+export interface Note {
+  id: string; kind: string; title: string; content: string; ts: number;
+}
+
 // 下载/预览研报：带鉴权头 fetch → blob → 触发浏览器下载（<a download> 无法带 Authorization，故走 blob）。
 export async function downloadReport(id: string, name: string): Promise<void> {
   const resp = await fetch(`/api/myreports/file/${id}`, { headers: authHeaders() });
@@ -272,4 +277,11 @@ export const api = {
   uploadReport: (name: string, contentB64: string) =>
     request<MyReport>("/myreports", "POST", { name, content_b64: contentB64 }),
   deleteReport: (id: string) => request<{ ok: boolean }>(`/myreports/${id}`, "DELETE"),
+  myAccumulation: () => get<Note[]>("/myaccumulation"),
+  addAccumulation: (kind: string, title: string, content: string) =>
+    request<Note>("/myaccumulation", "POST", { kind, title, content }),
+  deleteAccumulation: (id: string) => request<{ ok: boolean }>(`/myaccumulation/${id}`, "DELETE"),
+  clearAccumulation: () => request<{ removed: number }>("/myaccumulation", "DELETE"),
+  importAccumulation: (notes: Note[]) =>
+    request<{ imported: number }>("/myaccumulation/import", "POST", { notes }),
 };

@@ -82,10 +82,15 @@ export function Debate() {
     setRunning(false);
   }
 
-  function save() {
+  // 沉淀已落后端磁盘，addNote 变异步；失败要让用户看见（以前是同写 localStorage、不会失败）。
+  async function save() {
     const body = stages.map((s) => `## ${s.label}\n\n${s.content}`).join("\n\n---\n\n");
-    addNote("多空辩论", `多空辩论 · ${code.trim()}`, body);
-    setSaved(true);
+    try {
+      await addNote("多空辩论", `多空辩论 · ${code.trim()}`, body);
+      setSaved(true);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "存入沉淀失败，请先启动 backend");
+    }
   }
 
   const finished = stages.length > 0 && stages.every((s) => s.done);

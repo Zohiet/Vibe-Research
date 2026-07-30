@@ -27,6 +27,7 @@ import portfolio as pf
 import market
 import myreports as mr
 import reflection as reflect_layer
+import myaccumulation as ma
 
 app = FastAPI(title="Vibe-Research API", version="0.2.2")
 
@@ -249,6 +250,56 @@ def myreports_file(rid: str):
 @app.delete("/api/myreports/{rid}")
 def myreports_delete(rid: str):
     return {"data": {"ok": mr.delete_report(rid)}}
+
+
+# ---- 沉淀（研究记录，一条一个 markdown 文件，存本地、不上传、不进开源仓库）----
+
+class AccumulationIn(BaseModel):
+    kind: str = ""
+    title: str = ""
+    content: str
+
+
+class AccumulationItem(BaseModel):
+    id: str
+    kind: str = ""
+    title: str = ""
+    content: str = ""
+    ts: int
+
+
+class AccumulationImportIn(BaseModel):
+    notes: list[AccumulationItem]
+
+
+@app.get("/api/myaccumulation")
+def myaccumulation_list():
+    return {"data": ma.list_notes()}
+
+
+@app.post("/api/myaccumulation")
+def myaccumulation_add(n: AccumulationIn):
+    """存一条沉淀（AI 复盘 / 要点 / 问答结果）→ 落本机磁盘 markdown 文件。"""
+    if not (n.content or "").strip():
+        raise HTTPException(400, "沉淀正文不能为空")
+    return {"data": ma.add_note(n.kind, n.title, n.content)}
+
+
+@app.post("/api/myaccumulation/import")
+def myaccumulation_import(payload: AccumulationImportIn):
+    """批量导入（浏览器 localStorage → 磁盘迁移用），保留原 id+ts，幂等。"""
+    imported = ma.import_notes([item.model_dump() for item in payload.notes])
+    return {"data": {"imported": imported}}
+
+
+@app.delete("/api/myaccumulation")
+def myaccumulation_clear():
+    return {"data": {"removed": ma.clear_notes()}}
+
+
+@app.delete("/api/myaccumulation/{nid}")
+def myaccumulation_delete(nid: str):
+    return {"data": {"ok": ma.delete_note(nid)}}
 
 
 class CloseIn(BaseModel):

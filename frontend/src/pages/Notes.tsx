@@ -1,13 +1,13 @@
-import { useRef, useState } from "react";
-import { Trash2, ChevronDown, ChevronRight, NotebookPen, ScanSearch, Save } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Trash2, ChevronDown, ChevronRight, NotebookPen, ScanSearch, Save, Loader2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Disclaimer } from "@/components/ui/Disclaimer";
-import { loadNotes, deleteNote, clearNotes, addNote, type Note } from "@/lib/notes";
+import { listNotes, deleteNote, clearNotes, addNote, migrateLocalNotes } from "@/lib/notes";
 import { reflectStream } from "@/lib/agents";
-import { ApiError } from "@/lib/api";
+import { ApiError, type Note } from "@/lib/api";
 
 const KIND_COLOR: Record<string, string> = {
   复盘: "bg-primary/15 text-primary",
@@ -18,7 +18,9 @@ const KIND_COLOR: Record<string, string> = {
 };
 
 export function Notes() {
-  const [notes, setNotes] = useState<Note[]>(loadNotes);
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   // 反思：对某条记录做推理审计。只保留「当前这条」的结果，避免一堆长文同时挂在页面上。
   const [reflectId, setReflectId] = useState<string | null>(null);
@@ -47,10 +49,52 @@ export function Notes() {
     }
   }
 
-  function saveReflection(n: Note) {
-    setNotes(addNote("反思审计", `反思 · ${n.title}`, reflectText));
-    setReflectSaved(true);
+  // 沉淀已落后端磁盘：存完要重新拉列表（不能像以前那样拿 addNote 的返回值直接 setNotes）。
+  async function saveReflection(n: Note) {
+    try {
+      await addNote("反思审计", `反思 · ${n.title}`, reflectText);
+      await load();
+      setReflectSaved(true);
+    } catch (e) {
+      setReflectErr(e instanceof ApiError ? e.message : "存入沉淀失败，请先启动 backend");
+    }
   }
+
+  const load = async () => {
+    try {
+      setNotes(await listNotes());
+      setErr(null);
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : "加载研究记录失败");
+    }
+  };
+
+  useEffect(() => {
+    (async () => {
+      await migrateLocalNotes(); // 首次把浏览器旧沉淀迁到磁盘（幂等）
+      await load();
+      setLoading(false);
+    })();
+  }, []);
+
+  const remove = async (id: string) => {
+    try {
+      await deleteNote(id);
+      await load();
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : "删除失败");
+    }
+  };
+
+  const clearAll = async () => {
+    if (!confirm("清空所有研究记录？（同时从本地归档目录移除）")) return;
+    try {
+      await clearNotes();
+      await load();
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : "清空失败");
+    }
+  };
 
   const fmt = (ts: number) => new Date(ts).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 
@@ -58,16 +102,28 @@ export function Notes() {
     <div>
       <PageHeader
         title="研究记录"
-        subtitle="把 AI 复盘 / 要点 / 问答沉淀在本地，随时回看。数据只存本地、不上传。"
+        subtitle="把 AI 复盘 / 要点 / 问答沉淀到本机磁盘，随时回看。数据只存本地、不上传。"
         actions={notes.length > 0 && (
-          <button onClick={() => { if (confirm("清空所有研究记录？")) { clearNotes(); setNotes([]); } }}
+          <button onClick={clearAll}
             className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm text-muted-foreground hover:text-destructive">
             <Trash2 className="h-4 w-4" /> 清空
           </button>
         )}
       />
 
-      {notes.length === 0 ? (
+      {err && (
+        <GlassCard className="mb-3 border-destructive/30">
+          <p className="py-1 text-sm text-destructive">{err}</p>
+        </GlassCard>
+      )}
+
+      {loading ? (
+        <GlassCard>
+          <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+            <Loader2 className="h-5 w-5 animate-spin text-primary" /> 加载中…
+          </div>
+        </GlassCard>
+      ) : notes.length === 0 ? (
         <GlassCard>
           <div className="flex flex-col items-center gap-2 py-10 text-center text-sm text-muted-foreground">
             <NotebookPen className="h-8 w-8 text-muted-foreground/40" />
@@ -87,7 +143,7 @@ export function Notes() {
                     <span className="flex-1 truncate text-sm font-medium">{n.title}</span>
                     <span className="shrink-0 font-mono text-[11px] text-muted-foreground/60">{fmt(n.ts)}</span>
                   </button>
-                  <button onClick={() => setNotes(deleteNote(n.id))} className="shrink-0 text-muted-foreground/60 hover:text-destructive" title="删除">
+                  <button onClick={() => remove(n.id)} className="shrink-0 text-muted-foreground/60 hover:text-destructive" title="删除">
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
