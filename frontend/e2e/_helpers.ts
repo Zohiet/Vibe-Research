@@ -73,6 +73,29 @@ export async function expectNumericLike(loc: Locator, label = "数值") {
 /** 后端健康检查——验收脚本开头调，把「后端没起」和「功能坏了」区分开。 */
 export async function assertBackendUp(page: Page) {
   const resp = await page.request.get("/api/health");
-  expect(resp.ok(), "后端 /api/health 不通——请先启动后端（./dev.ps1 或 /vr-dev）").toBeTruthy();
+  expect(resp.ok(), "后端 /api/health 不通——请先启动后端（./dev.ps1 -Sandbox）").toBeTruthy();
   expect((await resp.json()).ok).toBe(true);
+}
+
+/**
+ * 断言当前打的是**沙箱实例**，不是跑着真实持仓的那个。
+ *
+ * **任何会写数据的验收脚本都必须先调这个。** 光靠"E2E 只打 5900"是结构约定，
+ * 万一哪次在 5900 起了连真实数据的实例，脚本就会往用户的真钱记录里增删条目。
+ * 这里做硬断言：后端 /api/health 的 sandbox 字段必须为 true（该字段由后端进程的
+ * VR_DATA_DIR 是否设置推导），不满足直接失败退出，绝不继续。
+ *
+ * 起沙箱：`./dev.ps1 -Sandbox`（后端 :8901 + 前端 :5900，数据落 .sandbox-data/）
+ */
+export async function assertSandbox(page: Page) {
+  const resp = await page.request.get("/api/health");
+  expect(resp.ok(), "后端 /api/health 不通——请先启动沙箱（./dev.ps1 -Sandbox）").toBeTruthy();
+  const health = await resp.json();
+  expect(health.ok).toBe(true);
+  expect(
+    health.sandbox,
+    "⚠️ 当前后端不是沙箱实例（health.sandbox !== true）。" +
+      "会写数据的验收脚本必须跑在沙箱上，否则会改动 ~/.vibe-research/ 里的真实持仓。" +
+      "请用 ./dev.ps1 -Sandbox 启动，并确认 Playwright 打的是 :5900。",
+  ).toBe(true);
 }

@@ -55,15 +55,32 @@ if ($routes -match '^\s*(\d+)\s*$') { Write-Host "✓ 通过，$($Matches[1]) �
 else { $failed += 'backend import'; Write-Host "✗ import 失败：$routes" -ForegroundColor Red }
 
 # ── 4. Playwright 验收（可选）──────────────────────────────────────
+# 验收脚本会真的增删持仓，所以只允许打**沙箱实例**（./dev.ps1 -Sandbox，后端 :8901）。
+# 这里先探测沙箱在不在，不在就明确报错——绝不能默默退回去打 :8900 的真实数据实例。
 if ($E2E) {
     Section 'Playwright 验收截图'
-    Push-Location "$root\frontend"
-    npx playwright test
-    if ($LASTEXITCODE -ne 0) { $failed += 'playwright'; Write-Host '✗ 验收脚本未通过' -ForegroundColor Red }
-    else { Write-Host '✓ 通过，截图已归档到 docs/screenshots/' -ForegroundColor Green }
-    Pop-Location
+
+    $sandboxOk = $false
+    try {
+        $h = Invoke-RestMethod -Uri 'http://127.0.0.1:8901/api/health' -TimeoutSec 5
+        $sandboxOk = [bool]$h.sandbox
+    } catch { $sandboxOk = $false }
+
+    if (-not $sandboxOk) {
+        $failed += 'playwright (沙箱未就绪)'
+        Write-Host '✗ 沙箱后端 :8901 不可用或不是沙箱实例' -ForegroundColor Red
+        Write-Host '  验收脚本会真的增删持仓，必须跑在沙箱上，否则会改动你的真实持仓。' -ForegroundColor Red
+        Write-Host '  请先执行：  ./dev.ps1 -Sandbox   （后端 :8901 + 前端 :5900）' -ForegroundColor Yellow
+    } else {
+        Write-Host '✓ 沙箱就绪（:8901 health.sandbox = true），数据落 .sandbox-data/' -ForegroundColor Green
+        Push-Location "$root\frontend"
+        npx playwright test
+        if ($LASTEXITCODE -ne 0) { $failed += 'playwright'; Write-Host '✗ 验收脚本未通过' -ForegroundColor Red }
+        else { Write-Host '✓ 通过，截图已归档到 docs/screenshots/' -ForegroundColor Green }
+        Pop-Location
+    }
 } else {
-    Write-Host "`n(跳过 Playwright；要跑验收截图用 ./ci.ps1 -E2E，需前后端已启动)" -ForegroundColor DarkGray
+    Write-Host "`n(跳过 Playwright；要跑验收截图用 ./ci.ps1 -E2E，需先 ./dev.ps1 -Sandbox)" -ForegroundColor DarkGray
 }
 
 # ── 汇总 ───────────────────────────────────────────────────────────

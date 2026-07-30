@@ -6,6 +6,9 @@ VibeResearch-方案定稿.md
 VibeResearch-专业化建议.md
 
 # ── 私有数据（持仓 / 关注股 / 缓存：只存本地、不上传） ──────────────
+# E2E 沙箱数据目录。验收脚本会往里写假持仓，绝不能入库；
+# 它的存在正是为了让 E2E 碰不到 ~/.vibe-research/ 里的真实数据。
+.sandbox-data/
 **/.cache/
 my-watchlist.json
 portfolio.json
