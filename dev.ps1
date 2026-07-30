@@ -1,4 +1,4 @@
-# 开两个 PowerShell 窗口，各自激活 conda 环境 tradingagents，分别拉起后端和前端。
+﻿# 开两个 PowerShell 窗口，各自激活 conda 环境 tradingagents，分别拉起后端和前端。
 #   后端 uvicorn → http://127.0.0.1:8900
 #   前端 vite    → http://127.0.0.1:5899
 # 用法（项目根目录）： ./dev.ps1

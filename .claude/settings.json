@@ -1,49 +1,4 @@
 {
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "if": "Bash(git commit *)",
-            "shell": "bash",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-branch.sh\"",
-            "statusMessage": "检查当前分支…",
-            "timeout": 15
-          }
-        ]
-      }
-    ],
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "shell": "bash",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-context.sh\"",
-            "timeout": 20
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "shell": "bash",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/typecheck.sh\"",
-            "async": true,
-            "asyncRewake": true,
-            "timeout": 180,
-            "rewakeSummary": "tsc 类型检查失败",
-            "statusMessage": "后台类型检查…"
-          }
-        ]
-      }
-    ]
-  },
   "permissions": {
     "allow": [
       "Bash(git status*)",
@@ -56,7 +11,8 @@
       "Bash(git add*)",
       "Bash(git fetch*)",
       "Bash(npx tsc*)",
-      "Bash(conda run -n tradingagents python -m pytest*)"
+      "Bash(npx playwright*)",
+      "Bash(conda run --no-capture-output -n tradingagents python -m pytest*)"
     ],
     "deny": [
       "Bash(git push upstream*)",

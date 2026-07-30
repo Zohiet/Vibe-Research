@@ -28,6 +28,11 @@ public/user-data/
 dist/
 build/
 frontend/tsconfig.tsbuildinfo
+# Playwright 的临时诊断产物（trace / 失败快照）。
+# 注意：Harness 验收截图不在这里——它们由 e2e/_helpers.ts 的 shot() 显式写到
+# docs/screenshots/VR-GOAL-XXX_<slug>/，那是长期归档、必须入库。
+frontend/test-results/
+frontend/playwright-report/
 
 # ── 编辑器 / 系统 / 工具 ──────────────────────────────────────────
 # .claude/ 里 settings.json + commands/ + hooks/ 是项目 harness，**入库**跟着仓库走；

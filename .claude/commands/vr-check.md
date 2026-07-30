@@ -2,7 +2,14 @@
 description: 跑 Vibe-Research 全套验证（前端 tsc + 后端 pytest + 后端 import），汇总结果
 ---
 
-跑这个项目的完整验证闸门，三步都要跑完再汇报，不要中途停：
+跑这个项目的完整验证闸门。**首选直接跑封装好的脚本**（Harness 规范里的 `make ci` 等价物）：
+
+```powershell
+./ci.ps1          # 下面三步
+./ci.ps1 -E2E     # 再追加 Playwright 验收截图（需前后端已启动）
+```
+
+它已经内置了基线判定。下面是它逐步做的事，脚本不可用时手动走：
 
 1. **前端类型检查**（仓库无 ESLint，tsc 是唯一闸门）
    ```bash

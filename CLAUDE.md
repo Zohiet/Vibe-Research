@@ -97,24 +97,53 @@ portfolio / myreports / myaccumulation (本地用户数据)      cli_runtime.py 
 
 发布前必须跑 `npx tsc -b` + `pytest -m "not live"`——本仓库最大的伤害源是 git 不报冲突的**语义冲突**：改了某个模块的 API，别处的调用方悄悄坏掉（真实案例：`addNote` 改异步后 `Debate.tsx` 的调用点类型全错，git 一声不吭）。改动被多处调用的 API 后要 grep 一遍调用方。完整流程与 Windows 坑见用户级 skill `VR-git`。
 
-### harness：这些流程已经自动化了
+## Harness Engineering：本项目的交付纪律
 
-`.claude/` 里的配置**随仓库走**（只有 `settings.local.json` 不入库），所以下面这些在任何机器上 clone 下来都直接生效：
+**这是本仓库的核心工作方式，动手写代码前先读 [`docs/harness/goal_workflow.md`](docs/harness/goal_workflow.md)。**
+
+开发单位是 `VR-GOAL-XXX_<slug>`——一个可验收的垂直切片。闭环五步：
+
+```
+Goal Spec → 实现 Plan →（等人确认）→ 实现 → ci.ps1 + Playwright 截图 → 验收报告
+docs/goals/  docs/plans/                      docs/screenshots/    docs/acceptance/
+```
+
+**最关键的一条：Plan 必须经负责人确认后才能写代码。** 这道闸门挡的是按错误口径实现完再返工、以及自作主张扩大范围。
+
+**代码写完不算完成**：Goal/Plan/Acceptance 三份齐全、Plan 已确认、CI 绿、截图入库、每条验收项判定通过、diff 已复查——全齐才能发布到 `main`。规范全文见 [`docs/harness/Harness_Engineering_项目开发规范.md`](docs/harness/Harness_Engineering_项目开发规范.md)。
+
+纯文档、错别字、README 小修、无行为变化的整理**可豁免**，但提交信息里要写明豁免理由。别为走流程而走流程。
+
+### 命令入口
+
+`.claude/` 随仓库走（只有 `settings.local.json` 不入库），clone 到任何机器都直接生效：
 
 | 入口 | 作用 |
 |---|---|
-| `/vr-check` | 跑全套验证并判读结果（含「1 failed 是基线」的说明） |
-| `/vr-release` | dev → main 完整发布：前置检查 → 验证 → `--ff-only` → push → 切回 dev |
-| `/vr-dev` | 后台起前后端并做健康检查 |
-| `/vr-upstream` | 只读查看上游更新，看完停下 |
+| `/vr-goal <一句话需求>` | 开新 Goal：判断是否豁免 → 取编号 → 写 Goal Spec + Plan → **停下等确认** |
+| `/vr-accept VR-GOAL-XXX` | 走验收：CI + 截图 → 写验收报告 → 核对完成定义 |
+| `/vr-check` | 只跑验证（等价 `./ci.ps1`） |
+| `/vr-release` | 发布：查完成定义 → 验证 → `--ff-only` → push → 切回 dev |
+| `/vr-dev` | 后台起前后端并健康检查 |
+| `/vr-upstream` | 只读查看上游更新 |
 
-三个 hook（`.claude/hooks/`，配置在 `.claude/settings.json`）：
+`permissions.deny` 挡死了 `git push upstream*` 和强推。**目前没有配 hook**——试过一版（main 上提交拦截 / 自动 typecheck），判断为冗余已移除，需要时可从 commit `d4dfcb3` 取回。
 
-- **在 `main` 上执行 `git commit` 会被直接拦截**（`guard-branch.sh`）——想提交就先切 dev。
-- 会话开始时自动注入当前分支 / dev 领先 main 多少 / 工作区脏不脏（`session-context.sh`）。
-- 每轮结束后**后台跑 `tsc -b`**，仅在工作区有 `.ts/.tsx` 改动时触发；失败会带着报错唤醒继续修（`typecheck.sh`）。嫌吵就删掉 `settings.json` 里的 `Stop` 那段。
+### CI 与验收截图
 
-`permissions.deny` 挡死了 `git push upstream*` 和强推。
+```powershell
+./ci.ps1          # 前端 tsc + 后端 pytest + 后端 import 自检（内置基线判定）
+./ci.ps1 -E2E     # 追加 Playwright 验收（需前后端已启动）
+```
+
+Playwright 配置在 `frontend/playwright.config.ts`，脚本在 `frontend/e2e/`，
+公共工具 `e2e/_helpers.ts`（`shot()` 归档截图 / `watchConsole()` 查错 / `expectNumericLike()` 验数字形状）。
+
+写验收脚本三条纪律：**一张图证明一条验收项**；**等语义状态不等时间**（实时行情快慢不定，`waitForTimeout` 必然间歇性失败）；**不断言具体行情数值**（明天就变，只验非空和格式）。
+
+两个环境坑已在配置里注掉，改的时候别踩回去：
+- `.ps1` 脚本**必须存成 UTF-8 with BOM**，否则 PowerShell 5.1 按 GBK 解码中文，会连带把 `{}` 配对搞乱、直接语法错。
+- Playwright 的 `baseURL` 用 **`localhost`** 而非 `127.0.0.1`——vite dev server 只监听 IPv6 回环 `[::1]`（正好是 `vite.config.ts` 里 issue #8 的镜像情况：后端只听 IPv4 所以代理必须写 `127.0.0.1`）。
 
 ### vendored 数据源
 

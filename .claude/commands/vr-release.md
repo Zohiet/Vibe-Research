@@ -16,10 +16,22 @@ git log --oneline main..dev    # 这次要发布的内容
 - 工作区不干净 → 停下，列出未提交的改动，问用户是要先提交还是先搁置。
 - `main..dev` 为空 → 没东西可发布，直接说明并结束。
 
-## 2. 跑验证
+## 2. Harness 完成定义 + 验证
 
-执行 `/vr-check` 的全部内容。**必须全绿才继续**（后端那条 Windows 专属失败
-`test_run_cli_stream_timeout` 属于基线，不算失败）。有真失败就停下报告，不发布。
+若这批改动属于某个 Goal（`main..dev` 的提交信息里带 `VR-GOAL-XXX`），
+先确认它已经走完闭环：`docs/goals/`、`docs/plans/`（已确认）、`docs/acceptance/` 三份齐全，
+截图已归档。**缺哪份就停下报告，让用户先走 `/vr-accept`。**
+
+纯文档 / 豁免类改动不受此限，但提交信息里应写明豁免理由。
+
+然后跑验证：
+
+```powershell
+./ci.ps1
+```
+
+**必须全绿才继续**（后端那条 Windows 专属失败 `test_run_cli_stream_timeout` 属于基线，
+`ci.ps1` 已内置判定）。有真失败就停下报告，不发布。
 
 ## 3. 快进合并并推送
 
