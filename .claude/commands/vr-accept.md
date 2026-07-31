@@ -3,15 +3,34 @@ description: 走 Goal 验收（跑 CI + Playwright 截图 → 写验收报告 �
 argument-hint: VR-GOAL-XXX
 ---
 
-对 **$ARGUMENTS** 走验收。先读 [`docs/harness/goal_workflow.md`](docs/harness/goal_workflow.md)。
+对 **$ARGUMENTS** 走验收。
+
+## 0. 先确定档位——**这一步决定后面每一步**
+
+打开 Goal Spec 看它的「档位」字段，然后**打开
+[`docs/harness/goal_workflow.md`](docs/harness/goal_workflow.md) 的「完成定义」一节，
+照那份清单走**。
+
+> ⚠️ **本命令刻意不复述档位规则**（该写哪些产物、报告放哪个目录）。
+> 规则只有一处真相源，就是 `goal_workflow.md`——**你必须去读它，不能从这里抄**。
+>
+> 为什么这么定：VR-GOAL-008~011 期间，连续四轮验收全靠「看上一个 Goal 长什么样照抄」，
+> 抄到的样板恰好是另一个档位的，于是三个完整档的验收报告全写错了地方，
+> 一直到发布前 `/vr-release` 的独立复查才被抓到。
+> **一条命令只要自己复述规则，就等于允许你不去看原文**——而复述迟早和原文不一致
+> （本命令曾经就是：它无条件要求写 `docs/acceptance/`，而那对其中一个档位是错的）。
+
+把该 Goal 的档位和对应的产物清单**明确写出来**再往下走。
 
 ## 1. 读回 Goal 和 Plan
 
-`docs/goals/$ARGUMENTS_*.md` 和 `docs/plans/$ARGUMENTS_*.md`。
+`docs/goals/$ARGUMENTS_*.md`，以及 `docs/plans/$ARGUMENTS_*.md`（**该档位要求时才有**）。
 把验收项列出来——下面每一条都要判定。
 
-若 Plan 的确认状态还是 ⬜ 待确认，**停下来**：这个 Goal 就不该进入验收，
+**若该档位要求 Plan**：确认状态还是 ⬜ 待确认就**停下来**——这个 Goal 不该进入验收，
 说明实现是在没对齐方案的情况下做的，先请用户补确认或说明情况。
+
+**若该档位不要求 Plan**：别去找，更别因为找不到就报缺失。
 
 ## 2. 跑 CI
 
@@ -51,8 +70,13 @@ cd frontend && npx playwright test e2e/$ARGUMENTS_*.spec.ts   # 只跑这个 Goa
 
 ## 4. 写验收报告
 
-照 [`docs/harness/templates/acceptance.md`](docs/harness/templates/acceptance.md) 写到
-`docs/acceptance/$ARGUMENTS_<slug>.md`。
+**写哪儿由档位决定——回第 0 步那份清单里查，不要凭印象。**
+（提示：两个档位的落点不同，且其中一个**不该**产生 `docs/acceptance/` 下的文件。
+具体以 `goal_workflow.md` 为准。）
+
+落点若在独立的验收报告文件，照
+[`docs/harness/templates/acceptance.md`](docs/harness/templates/acceptance.md) 的三段结构写；
+落点若在 Goal Spec 内，按 `goal_workflow.md` 的规定处理。**两种情况内容深度都不打折。**
 
 - **正文用业务语言**，逐条对着验收项**列出证据**。不要在正文堆命令行输出。
 - **工程证据放附录**：CI run URL、测试统计、`git diff --stat`、关键 commit sha。
@@ -73,19 +97,18 @@ cd frontend && npx playwright test e2e/$ARGUMENTS_*.spec.ts   # 只跑这个 Goa
 
 ## 5. 核对完成定义
 
-逐项打勾并报告：
+**打开 `goal_workflow.md` 的「完成定义」一节，对着该档位的那份清单逐条核，
+逐条报告打没打上勾。**
 
-- [ ] Goal Spec 在，且验收项已经过负责人确认（第一道闸）
-- [ ] Plan 在，且已经过负责人确认（第二道闸）
-- [ ] 验收报告在，证据齐全
-- [ ] `./ci.ps1` 全绿（无豁免）
-- [ ] GitHub Actions 本分支最近一次 run 为绿，URL 已写入报告
-- [ ] 每条验收项都有可回看的证据；有界面的已肉眼确认截图有效
-- [ ] diff 已复查（改过的 API 的调用方都跟进了？有没有误入库的临时文件？合规红线？）
-- [ ] 报告有「复核要点」一节，没达成的项 / Plan 偏差 / 新风险都已顶到显眼处
+> ⚠️ **不要凭记忆列清单，也不要从本文件抄**——本命令没有那份清单，这是有意的。
+> 每一条都要能说出「我查了什么、看到了什么」，说不出就是没查。
+>
+> **不要在验收报告里再写一遍这份核对。** 自己写给自己看的核对已经被证明无效
+> （VR-GOAL-009/010/011 的报告里连着三次写「完成定义已满足」，三次都是假的）。
+> 真正拦住问题的是 `/vr-release` 的独立复查——**核对的价值在于另一道闸去查，不在于自证**。
 
 有没打上的就如实报告缺哪项，不要含糊过去。**全部打勾就直接往下走**——
-按 `agent_workflow.md` 的模板写合并记录、`--no-ff` 并回 dev、推送。
-不要停下来等签字：负责人事后读报告，有异议一条 `git revert -m 1` 就能撤。
+按 `agent_workflow.md` 的模板写合并记录、并回 dev（开过分支的用 `--no-ff`）、推送。
+不要停下来等签字：负责人事后读报告，有异议一条 `git revert` 就能撤。
 
 发布到 `main` 仍由用户主动走 `/vr-release`——那是他的动作，不是你的。
