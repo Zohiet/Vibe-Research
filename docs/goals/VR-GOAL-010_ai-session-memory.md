@@ -114,56 +114,10 @@
 
 ---
 
-## 验收判定
+## 验收
 
-**完成日期**：2026-07-31 ｜ **实施提交**：`1b4897a`
+验收报告见 [`../acceptance/VR-GOAL-010_ai-session-memory.md`](../acceptance/VR-GOAL-010_ai-session-memory.md)。
 
-`./ci.ps1 -E2E` 全绿：tsc 通过 / **118 passed**（新增 9 条）/ 57 条路由 / **6 E2E passed**。
-
-| # | 验收项 | 达成情况 | 证据 |
-|---|---|---|---|
-| 1 | 切页往返对话还在 | 已达成 | E2E：预置会话 → 进持仓页看到 → 关面板切到研究记录 → `goBack()` → 内容一字不差。截图 `01` / `02` |
-| 2 | 刷新后还在 | 已达成 | E2E：`page.reload()` 后仍在。截图 `03`。**这条正是不能用前端内存的原因** |
-| 3 | **绝不落盘**（红线）| 已达成 | `test_nothing_written_to_disk`：20 次 PUT + 20 次 GET + 1 次 DELETE 后，`VR_DATA_DIR` 的目录指纹（路径+大小+mtime_ns）**与跑前完全一致** |
-| 4 | key 数量上限与 LRU | 已达成 | `test_key_limit_lru_evicts_least_recently_used`：写满 100 个后**先读一次 k0**，再写第 101 个 → k0 仍在、k1 被淘汰。这条断言专门区分 LRU 与 FIFO——按"最早创建"淘汰会丢掉 k0 |
-| 5 | 单 key 体积上限 | 已达成 | `test_oversized_payload_413`：超 256 KB → 413，且**没被写进去**（随后 GET 为 null）|
-| 6 | 清空对话可用 | 已达成 | 单测（删两次不报错）+ E2E：点「清空对话」→ 消失 → **刷新后也没回来**（证明清空落到了后端，不是只清了前端）。截图 `04` |
-| 7 | 恢复内容标着生成时间 | 已达成 | E2E：正常显示「生成于 …」；用 `page.clock.setFixedTime` 把浏览器拨快 26 小时 → 显示「生成于 **昨天** 14:32 · 数据可能已过期」。截图 `05` |
-| 8 | 中断保留已生成部分 | **弱证据**（Plan 已声明并接受）| 抽成纯函数 `finalizeOnAbort(msgs)`：无内容 → 去掉空气泡；有半截 → 标 `aborted`。**无自动化断言** |
-| 9 | 后端不可用时页面不崩 | 已达成 | `useAiSession` 的 GET / PUT / DELETE 全部 `.catch()` 静默降级；`test_null_payload_is_allowed` 覆盖空载荷；E2E 的 `watchConsole().check()` 全程无 console error |
-
-### 与 Plan 的偏差（两处）
-
-1. **`Debate` 的 key 从 `debate:<code>` 改成单个 `debate`**（把 `code` 一起存进载荷）。
-   Plan 那个写法**永远恢复不出来**——进页面时 `code` 是空的，拿不到 key 就没得恢复，
-   用户得先把六位代码原样敲一遍才看得见上次的结果。改成单 key 后进页面就看到上次那场，
-   代码框也自动填好。
-2. **`Notes` 的反思从 `reflect:<noteId>` 改成单个 `reflect`**（存 `Record<noteId, text>`）。
-   同一个理由：按 noteId 分开存的话，进页面时没人知道该拉哪些 id。
-   顺带也省 key 配额——100 个 key 该留给真正独立的会话（个股 / 板块）。
-
-### 实施中踩到的
-
-- **E2E 的测试数据里写了「昨天」两个字**，和时间标注撞车，`getByText(/昨天/)`
-  同时匹配到标注和正文 → strict mode violation。标注本身渲染是对的（`生成于 昨天 14:32`）。
-  这是本仓库第三次栽在 strict mode 上，前两次是 placeholder 重复和两张表都有 `tr`。
-- **AI 面板是 fixed 全屏遮罩**，开着的时候点不到侧边栏（backdrop intercepts pointer events）。
-  切页前必须先关面板。
-- `Debate` 的存档一开始写成在 `finally` 里套四层 `setState` 读最新值，
-  **难读且依赖批处理时机**。改成流回调里同时更新本地副本，`finally` 直接读本地变量。
-
-### 新引入的风险
-
-- **多标签页同页同时聊会互相覆盖**（决策 #6 已明确接受）。写入是整段覆盖不是合并。
-  发生条件苛刻：同时开两个标签页、停在同一页面、都在聊。
-- **流跑到一半强杀浏览器**这一轮会丢——写入发生在流结束或中止时，强杀没机会触发。
-- **验收项 8 无自动化断言**。这段逻辑（空 → 删气泡 / 半截 → 标中断）只有 code review 兜着，
-  将来改 `AskAiButton` 的 catch 分支时要留神。
-
-### 如需撤销
-
-```bash
-git revert -m 1 <合并提交 sha>
-```
-
-回滚后行为退回「切页即丢」，**无数据残留需要清理——因为本来就没落盘**。
+> 📌 本节原先直接写在这个文件里，不符合 `goal_workflow.md` 的完成定义
+> （验收报告的位置是 `docs/acceptance/VR-GOAL-XXX_<slug>.md`）。
+> 2026-07-31 发布前核对时发现并迁走——**同一份内容不留两处**。
