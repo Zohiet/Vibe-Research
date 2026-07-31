@@ -133,6 +133,18 @@ def list_notes() -> list[dict]:
     return sorted(notes, key=lambda n: n.get("ts", 0), reverse=True)
 
 
+def find_path(nid: str) -> Path | None:
+    """按 id 找到对应的磁盘文件路径；找不到返回 None。
+
+    给 wikipush.py 用（投递要复制原文件、保证逐字节一致）。做成公开函数而不是让
+    外部去调 `_iter_notes()`——「id 怎么映射到文件」是本模块的知识，不该外泄。
+    """
+    for p, note in _iter_notes():
+        if note.get("id") == nid:
+            return p
+    return None
+
+
 def add_note(kind: str, title: str, content: str, ts: int | None = None, id: str | None = None) -> dict:
     """新增一条沉淀 → 落盘。返回该条。"""
     note = {

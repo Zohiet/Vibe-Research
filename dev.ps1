@@ -23,13 +23,22 @@ if ($Sandbox) {
     $dataDir = Join-Path $root '.sandbox-data'
     if (-not (Test-Path $dataDir)) { New-Item -ItemType Directory -Path $dataDir | Out-Null }
 
+    # 假 wiki（VR-GOAL-009）：E2E 会真的往 raw/vr/ 投文件，绝不能指向 C:\投资笔记。
+    # 校验只看「有 CLAUDE.md 且有 wiki/」，所以两个空壳就够。
+    $fakeWiki = Join-Path $dataDir 'fake-wiki'
+    if (-not (Test-Path "$fakeWiki\wiki")) { New-Item -ItemType Directory -Path "$fakeWiki\wiki" -Force | Out-Null }
+    if (-not (Test-Path "$fakeWiki\CLAUDE.md")) {
+        Set-Content -Path "$fakeWiki\CLAUDE.md" -Value '# 沙箱假 wiki（dev.ps1 -Sandbox 生成，供投递功能调试用）' -Encoding UTF8
+    }
+
     Write-Host '沙箱模式：后端 :8901 / 前端 :5900' -ForegroundColor Yellow
     Write-Host "数据目录 $dataDir（与真实的 ~/.vibe-research/ 完全隔离）" -ForegroundColor Yellow
+    Write-Host "wiki 目录 $fakeWiki（与真实的 C:\投资笔记 完全隔离）" -ForegroundColor Yellow
 
-    # 后端：VR_DATA_DIR 指向沙箱。portfolio / myreports / myaccumulation 都在
-    # import 时按这个变量固化路径，所以必须在起进程前设好。
+    # 后端：VR_DATA_DIR 指向沙箱。portfolio / myreports / myaccumulation / wikipush 都在
+    # import 时按这些变量固化路径，所以必须在起进程前设好。
     Start-Process powershell -ArgumentList "-NoExit","-Command",
-      "conda activate tradingagents; cd '$root\backend'; `$env:VR_DATA_DIR='$dataDir'; uvicorn app:app --host 127.0.0.1 --port 8901"
+      "conda activate tradingagents; cd '$root\backend'; `$env:VR_DATA_DIR='$dataDir'; `$env:VR_WIKI_DIR='$fakeWiki'; uvicorn app:app --host 127.0.0.1 --port 8901"
 
     # 前端：VITE_API_URL 让 vite 把 /api 代理到沙箱后端，而不是默认的 8900
     Start-Process powershell -ArgumentList "-NoExit","-Command",

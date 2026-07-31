@@ -29,6 +29,7 @@ import market
 import myreports as mr
 import reflection as reflect_layer
 import myaccumulation as ma
+import wikipush
 
 app = FastAPI(title="Vibe-Research API", version="0.2.2")
 
@@ -328,7 +329,34 @@ class AccumulationImportIn(BaseModel):
 
 @app.get("/api/myaccumulation")
 def myaccumulation_list():
-    return {"data": ma.list_notes()}
+    """沉淀列表；每条带上「能不能投进 wiki」「投过没有」（VR-GOAL-009）。
+
+    页面级的 wiki 状态**套在 data 里面**而不是与它平级：前端 `request()` 会
+    `return payload?.data ?? payload`，平级的兄弟字段会被静默丢掉。
+    """
+    notes = ma.list_notes()
+    st = wikipush.status()
+    for n in notes:
+        n["can_push"] = st["enabled"]
+        n["pushed"] = n["id"][:8] in st["pushed_ids"]
+    return {"data": {"notes": notes, "wiki": {"enabled": st["enabled"], "error": st["error"]}}}
+
+
+@app.post("/api/myaccumulation/{nid}/push-wiki")
+def myaccumulation_push_wiki(nid: str):
+    """把一条沉淀原样复制进 wiki 的待摄入队列 `raw/vr/`。本机文件复制，不经网络。"""
+    src = ma.find_path(nid)
+    if src is None:
+        raise HTTPException(404, "沉淀不存在")
+    try:
+        dest = wikipush.push(src, nid)
+    except wikipush.WikiUnavailable as e:
+        raise HTTPException(400, str(e)) from e
+    except FileExistsError as e:
+        raise HTTPException(409, str(e)) from e
+    except OSError as e:
+        raise HTTPException(500, f"写入 wiki 失败：{e}") from e
+    return {"data": {"path": str(dest)}}
 
 
 @app.post("/api/myaccumulation")

@@ -39,6 +39,15 @@ export interface MyReport {
 // 沉淀（研究记录）—— 后端落本机磁盘（~/.vibe-research/myaccumulation/），一条一个 markdown 文件。
 export interface Note {
   id: string; kind: string; title: string; content: string; ts: number;
+  // VR-GOAL-009：能不能投进 wiki（未配 VR_WIKI_DIR / 目录读不到 → false）、投过没有
+  can_push?: boolean; pushed?: boolean;
+}
+
+// 列表出参把页面级的 wiki 状态**套在 data 里面**：request() 会 `payload?.data ?? payload`，
+// 与 data 平级的兄弟字段会被静默丢掉。
+export interface AccumulationList {
+  notes: Note[];
+  wiki: { enabled: boolean; error: string | null };
 }
 
 // 下载/预览研报：带鉴权头 fetch → blob → 触发浏览器下载（<a download> 无法带 Authorization，故走 blob）。
@@ -291,7 +300,8 @@ export const api = {
   uploadReport: (name: string, contentB64: string) =>
     request<MyReport>("/myreports", "POST", { name, content_b64: contentB64 }),
   deleteReport: (id: string) => request<{ ok: boolean }>(`/myreports/${id}`, "DELETE"),
-  myAccumulation: () => get<Note[]>("/myaccumulation"),
+  myAccumulation: () => get<AccumulationList>("/myaccumulation"),
+  pushNoteToWiki: (id: string) => request<{ path: string }>(`/myaccumulation/${id}/push-wiki`, "POST"),
   addAccumulation: (kind: string, title: string, content: string) =>
     request<Note>("/myaccumulation", "POST", { kind, title, content }),
   deleteAccumulation: (id: string) => request<{ ok: boolean }>(`/myaccumulation/${id}`, "DELETE"),

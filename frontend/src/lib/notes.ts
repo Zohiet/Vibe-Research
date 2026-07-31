@@ -2,7 +2,7 @@
 // 真相源是后端文件（~/.vibe-research/myaccumulation/，一条一个 markdown 文件），只落本地、不上传、不进仓库。
 // 对应投研框架第 7 层「沉淀」。
 
-import { api, type Note } from "@/lib/api";
+import { api, type AccumulationList, type Note } from "@/lib/api";
 import { storageGet, storageSet } from "@/lib/storage";
 
 export type { Note };
@@ -10,8 +10,13 @@ export type { Note };
 const OLD_KEY = "vr-notes";            // ≤ 本次改造前的浏览器本地存储
 const MIGRATED = "vr-notes-migrated";  // 迁移完成标记（置位后不再重复迁移）
 
-export function listNotes(): Promise<Note[]> {
+export function listNotes(): Promise<AccumulationList> {
   return api.myAccumulation();
+}
+
+// 把一条沉淀投进 wiki 的待摄入队列（VR-GOAL-009）。本机文件复制，不经网络。
+export function pushToWiki(id: string): Promise<{ path: string }> {
+  return api.pushNoteToWiki(id);
 }
 
 export function addNote(kind: string, title: string, content: string): Promise<Note> {
