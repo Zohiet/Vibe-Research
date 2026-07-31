@@ -98,6 +98,16 @@ portfolio / myreports / myaccumulation (本地用户数据)      cli_runtime.py 
 （`C:\投资笔记` 那类 llm-wiki 知识库的待摄入队列）。**`VR_WIKI_DIR` 未设 = 功能整体关闭**，
 按钮不渲染——绝大多数用户没有这个 wiki。
 
+**怎么开**：仓库根目录写 `.env.local`（已被 `.gitignore` 的 `.env.*` 覆盖）：
+
+```
+VR_WIKI_DIR=C:\投资笔记
+```
+
+`./dev.ps1` 的**日常分支**会读它；**`-Sandbox` 分支刻意不读**——沙箱必须用假 wiki，
+让它继承到真实路径就等于让 E2E 往你的真实知识库里投文件。改完要**重启后端**
+（路径在 import 时固化）。
+
 四条不能破的约定：
 
 - **VR 独占写 `raw/vr/`**，wiki 只读它、以及把处理完的文件移进 `raw/vr/ingested/`。

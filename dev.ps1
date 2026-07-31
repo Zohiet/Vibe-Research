@@ -44,9 +44,27 @@ if ($Sandbox) {
     Start-Process powershell -ArgumentList "-NoExit","-Command",
       "conda activate tradingagents; cd '$root\frontend'; `$env:VITE_API_URL='http://127.0.0.1:8901'; npm run dev -- --port 5900 --strictPort"
 } else {
+    # 本机私有配置（.env.local，已被 .gitignore 的 .env.* 覆盖）。
+    # 目前用来接 wiki：写一行 VR_WIKI_DIR=C:\投资笔记，研究记录页就会出现「沉淀进 wiki」。
+    # 不把私人路径焊进仓库——VR 是要开源的，别人接的是别人的 wiki。
+    #
+    # ⚠️ **只有这条日常分支读它，-Sandbox 分支绝不读**：沙箱要用假 wiki，
+    # 一旦让它继承到真实路径，E2E 就会往你的真实知识库里投文件。
+    $envFile = Join-Path $root '.env.local'
+    $extraEnv = ''
+    if (Test-Path $envFile) {
+        foreach ($line in Get-Content $envFile -Encoding UTF8) {
+            $t = $line.Trim()
+            if ($t -eq '' -or $t.StartsWith('#') -or $t -notmatch '=') { continue }
+            $k, $v = $t -split '=', 2
+            $extraEnv += "`$env:$($k.Trim())='$($v.Trim())'; "
+        }
+        if ($extraEnv) { Write-Host "已加载 .env.local" -ForegroundColor DarkGray }
+    }
+
     # 后端（真实数据）
     Start-Process powershell -ArgumentList "-NoExit","-Command",
-      "conda activate tradingagents; cd '$root\backend'; uvicorn app:app --host 127.0.0.1 --port 8900"
+      "conda activate tradingagents; cd '$root\backend'; $extraEnv uvicorn app:app --host 127.0.0.1 --port 8900"
 
     # 前端
     Start-Process powershell -ArgumentList "-NoExit","-Command",
