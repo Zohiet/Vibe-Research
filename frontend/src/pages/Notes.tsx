@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Trash2, ChevronDown, ChevronRight, NotebookPen, ScanSearch, Save, Loader2 } from "lucide-react";
+import { Trash2, ChevronDown, ChevronRight, NotebookPen, ScanSearch, Save, Loader2, BookUp } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Disclaimer } from "@/components/ui/Disclaimer";
-import { listNotes, deleteNote, clearNotes, addNote, migrateLocalNotes } from "@/lib/notes";
+import { listNotes, deleteNote, clearNotes, addNote, migrateLocalNotes, pushToWiki } from "@/lib/notes";
 import { reflectStream } from "@/lib/agents";
 import { ApiError, type Note } from "@/lib/api";
 
@@ -29,6 +29,31 @@ export function Notes() {
   const [reflecting, setReflecting] = useState(false);
   const [reflectSaved, setReflectSaved] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  // 投递进 wiki（VR-GOAL-009）：wikiErr 是「配了但目录读不到」的原因；
+  // pushingId 是正在投的那条；pushMsg 是成功/失败提示（只留当前这条的）。
+  const [wikiErr, setWikiErr] = useState<string | null>(null);
+  const [pushingId, setPushingId] = useState<string | null>(null);
+  const [pushMsg, setPushMsg] = useState<{ id: string; text: string; ok: boolean } | null>(null);
+
+  async function pushWiki(n: Note) {
+    setPushingId(n.id);
+    setPushMsg(null);
+    try {
+      await pushToWiki(n.id);
+      await load();
+      setPushMsg({
+        id: n.id,
+        ok: true,
+        // 决策 #6 的落点：不加任何常驻机制去通知已开着的 wiki 会话，
+        // 把「跟它说一句」这个办法放在你刚好需要它的这一刻。
+        text: "已投进 wiki 待摄入队列（raw/vr/）。若 wiki 会话正开着，跟它说「看下收件箱」。",
+      });
+    } catch (e) {
+      setPushMsg({ id: n.id, ok: false, text: e instanceof ApiError ? e.message : "投递失败" });
+    } finally {
+      setPushingId(null);
+    }
+  }
 
   async function runReflect(n: Note) {
     abortRef.current?.abort();
@@ -62,7 +87,11 @@ export function Notes() {
 
   const load = async () => {
     try {
-      setNotes(await listNotes());
+      const { notes, wiki } = await listNotes();
+      setNotes(notes);
+      // 「没配 wiki」是正常关闭（静默，按钮不出现）；「配了但读不到」必须说出来，
+      // 否则「我明明配了 VR_WIKI_DIR，按钮怎么没了」永远解释不清。
+      setWikiErr(wiki.error);
       setErr(null);
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : "加载研究记录失败");
@@ -117,6 +146,14 @@ export function Notes() {
         </GlassCard>
       )}
 
+      {wikiErr && (
+        <GlassCard className="mb-3 border-warning/30">
+          <p className="py-1 text-sm text-warning">
+            wiki 目录不可读，「沉淀进 wiki」已停用：{wikiErr}
+          </p>
+        </GlassCard>
+      )}
+
       {loading ? (
         <GlassCard>
           <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
@@ -159,10 +196,24 @@ export function Notes() {
                         <ScanSearch className="h-3.5 w-3.5" />
                         {reflecting && reflectId === n.id ? "审计中…" : "反思审计"}
                       </button>
+                      {n.can_push && (
+                        <button onClick={() => pushWiki(n)} disabled={n.pushed || pushingId === n.id}
+                          title={n.pushed ? "已在 wiki 的待摄入队列里" : "复制进投资笔记的 raw/vr/，由你在 wiki 会话里决定怎么消化"}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50">
+                          <BookUp className="h-3.5 w-3.5" />
+                          {n.pushed ? "已投递" : pushingId === n.id ? "投递中…" : "沉淀进 wiki"}
+                        </button>
+                      )}
                       <span className="text-[11px] text-muted-foreground/70">
                         让 AI 回头审这段推理：哪些有数据撑着、哪些是脑补、最脆弱的一环在哪
                       </span>
                     </div>
+
+                    {pushMsg?.id === n.id && (
+                      <p className={`mt-2 text-[11px] ${pushMsg.ok ? "text-success" : "text-destructive"}`}>
+                        {pushMsg.text}
+                      </p>
+                    )}
 
                     {reflectId === n.id && (reflectText || reflectErr) && (
                       <div className="mt-3 rounded-lg border border-violet-500/30 bg-violet-500/[0.05] p-3">

@@ -70,16 +70,26 @@ function Start-Sandbox {
     $dataDir = Join-Path $root '.sandbox-data'
     if (-not (Test-Path $dataDir)) { New-Item -ItemType Directory -Path $dataDir | Out-Null }
 
+    # 假 wiki（VR-GOAL-009）：验收脚本会真的往 raw/vr/ 投文件，绝不能指向 C:\投资笔记。
+    # 每次起沙箱清空待摄入队列，让「投递 → 已投递」这条验收从确定的状态出发。
+    $fakeWiki = Join-Path $dataDir 'fake-wiki'
+    if (Test-Path "$fakeWiki\raw\vr") { Remove-Item "$fakeWiki\raw\vr" -Recurse -Force }
+    if (-not (Test-Path "$fakeWiki\wiki")) { New-Item -ItemType Directory -Path "$fakeWiki\wiki" -Force | Out-Null }
+    if (-not (Test-Path "$fakeWiki\CLAUDE.md")) {
+        Set-Content -Path "$fakeWiki\CLAUDE.md" -Value '# 沙箱假 wiki（ci.ps1 生成，供 E2E 投递用）' -Encoding UTF8
+    }
+
     # -WindowStyle Hidden：不往桌面弹窗（dev.ps1 的 -NoExit 可见窗口是给人调试用的，
     # 这里要的是后台跑完能干净杀掉）。输出重定向到日志——失败时留现场就得连日志一起留，
     # 只留一个看不到后端报错的界面等于没留。
     $env:VR_DATA_DIR = $dataDir
+    $env:VR_WIKI_DIR = $fakeWiki
     $be = Start-Process powershell -PassThru -WindowStyle Hidden -RedirectStandardOutput "$dataDir\ci-backend.log" -RedirectStandardError "$dataDir\ci-backend.err.log" `
         -ArgumentList '-NoProfile','-Command',"cd '$root\backend'; conda run --no-capture-output -n tradingagents uvicorn app:app --host 127.0.0.1 --port 8901"
     $env:VITE_API_URL = 'http://127.0.0.1:8901'
     $fe = Start-Process powershell -PassThru -WindowStyle Hidden -RedirectStandardOutput "$dataDir\ci-frontend.log" -RedirectStandardError "$dataDir\ci-frontend.err.log" `
         -ArgumentList '-NoProfile','-Command',"cd '$root\frontend'; npm run dev -- --port 5900 --strictPort"
-    Remove-Item Env:\VR_DATA_DIR, Env:\VITE_API_URL -ErrorAction SilentlyContinue
+    Remove-Item Env:\VR_DATA_DIR, Env:\VR_WIKI_DIR, Env:\VITE_API_URL -ErrorAction SilentlyContinue
 
     Write-Host "  正在启动沙箱（后端 PID $($be.Id) / 前端 PID $($fe.Id)）…" -ForegroundColor DarkGray
     for ($i = 0; $i -lt 60; $i++) {

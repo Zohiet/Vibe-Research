@@ -23,12 +23,13 @@ def test_add_list_roundtrip_and_delete():
     nid = note["id"]
     assert note["kind"] == "复盘" and note["title"] == "每日复盘 2026-07-04"
 
-    lst = client.get("/api/myaccumulation").json()["data"]
+    # VR-GOAL-009 起，列表出参是 {"data": {"notes": [...], "wiki": {...}}}
+    lst = client.get("/api/myaccumulation").json()["data"]["notes"]
     got = next(x for x in lst if x["id"] == nid)
     assert got["content"] == "# 标题\n正文"  # 正文原样 roundtrip
 
     assert client.delete(f"/api/myaccumulation/{nid}").json()["data"]["ok"] is True
-    assert all(x["id"] != nid for x in client.get("/api/myaccumulation").json()["data"])
+    assert all(x["id"] != nid for x in client.get("/api/myaccumulation").json()["data"]["notes"])
 
 
 def test_filename_has_date_and_sanitized_title():

@@ -92,6 +92,26 @@ portfolio / myreports / myaccumulation (本地用户数据)      cli_runtime.py 
 - 沉淀（研究记录）= 一条一个 markdown 文件，手写极简 frontmatter 解析（**不引 PyYAML**，守零依赖红线），设计文档见 `docs/superpowers/specs/2026-07-11-myaccumulation-file-store-design.md`。
 - ⚠️ 路径在 **import 时**固化。`conftest.py` 因此必须在任何测试模块 import `app` 之前设好 `VR_DATA_DIR` 指向临时目录——否则持仓 CRUD 测试会改掉用户真实数据。新增落盘模块要同步进 `conftest.py` 的隔离。
 
+### 沉淀 → wiki 的单向投递（`wikipush.py`，VR-GOAL-009）
+
+研究记录页每条可「沉淀进 wiki」，把该条原样复制进 `$VR_WIKI_DIR/raw/vr/`
+（`C:\投资笔记` 那类 llm-wiki 知识库的待摄入队列）。**`VR_WIKI_DIR` 未设 = 功能整体关闭**，
+按钮不渲染——绝大多数用户没有这个 wiki。
+
+四条不能破的约定：
+
+- **VR 独占写 `raw/vr/`**，wiki 只读它、以及把处理完的文件移进 `raw/vr/ingested/`。
+  跨进程没有锁，靠写权限不重叠来保证安全。**尤其不许写 wiki 的 `index.md`**——
+  那是 wiki 里写得最频繁的文件，append 会被对方基于旧读取的编辑静默覆盖。
+- **不记台账**：投没投过 = 那两个目录里有没有带该 id 的文件。你在 wiki 侧删掉文件，
+  VR 下次自动允许重投，不会留下解释不了的灰按钮。
+- **失败不抛**：扫描出任何问题都降级成「不可投 + 原因」（页面顶部提示条），
+  不能让副功能干掉研究记录页。
+- **VR 不认识 wiki 的 schema**：原样复制，不做格式转换。转换写进 VR，wiki 改 schema 就得回头改 VR。
+
+E2E 用沙箱的 `.sandbox-data/fake-wiki`（`ci.ps1` / `dev.ps1 -Sandbox` 自动生成），
+**绝不指向真实知识库**——和持仓沙箱是同一条纪律。
+
 ### 前端
 
 - `vite.config.ts` 把 `/api` 代理到 `http://127.0.0.1:8900`（**写死 127.0.0.1 而非 localhost**，避免 Node 解析到 IPv6 ::1 导致 ECONNREFUSED，issue #8）。`VITE_API_URL` 可覆盖。
