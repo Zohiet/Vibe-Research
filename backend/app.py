@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -30,6 +31,7 @@ import myreports as mr
 import reflection as reflect_layer
 import myaccumulation as ma
 import wikipush
+import aisession
 
 app = FastAPI(title="Vibe-Research API", version="0.2.2")
 
@@ -357,6 +359,45 @@ def myaccumulation_push_wiki(nid: str):
     except OSError as e:
         raise HTTPException(500, f"写入 wiki 失败：{e}") from e
     return {"data": {"path": str(dest)}}
+
+
+# ── AI 会话内存（VR-GOAL-010）─────────────────────────────────────────
+# 只存 AI 产出，**纯内存、绝不落盘**，进程一停就没——这正是用户要的生命周期。
+# 别的 UI 状态（滚动位置、筛选条件）不要放进来：aisession.py 的上限与淘汰策略
+# 都是按 AI 文本量身定的，塞别的东西进来配额就失去意义。
+_AISESSION_KEY = re.compile(r"^[A-Za-z0-9:_\-一-龥]{1,64}$")
+
+
+class AiSessionIn(BaseModel):
+    data: object = None
+
+
+def _check_key(key: str) -> None:
+    if not _AISESSION_KEY.match(key):
+        raise HTTPException(400, "非法的会话 key（限 1-64 位字母/数字/中文/:_-）")
+
+
+@app.get("/api/aisession/{key}")
+def aisession_get(key: str):
+    _check_key(key)
+    ts, data = aisession.get(key)
+    return {"data": {"data": data, "ts": ts}}
+
+
+@app.put("/api/aisession/{key}")
+def aisession_put(key: str, body: AiSessionIn):
+    _check_key(key)
+    try:
+        ts = aisession.put(key, body.data)
+    except aisession.TooLarge as e:
+        raise HTTPException(413, str(e)) from e
+    return {"data": {"ts": ts}}
+
+
+@app.delete("/api/aisession/{key}")
+def aisession_delete(key: str):
+    _check_key(key)
+    return {"data": {"ok": aisession.delete(key)}}
 
 
 @app.post("/api/myaccumulation")

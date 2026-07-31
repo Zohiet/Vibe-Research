@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
+import { AiStamp } from "@/components/ui/AiStamp";
+import { useAiSession } from "@/hooks/useAiSession";
 import { Link } from "react-router-dom";
 import { TrendingUp, FileText, Newspaper, Rss, RefreshCw, Loader2, ExternalLink, AlertCircle, Sparkles, Lightbulb, Star } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -26,6 +28,9 @@ function InvestmentNewsPanel() {
   const [err, setErr] = useState<string | null>(null);
   const [active, setActive] = useState("ai");
   const [refreshing, setRefreshing] = useState(false);
+  // 提炼要点存后端进程内存（VR-GOAL-010）。整份 Record 存一个 key，
+  // 不按赛道各存一个——100 个 key 的配额要留给真正独立的会话（个股/板块）。
+  const digestSession = useAiSession<Record<string, { text: string }>>("intel");
   const [digests, setDigests] = useState<Record<string, Digest>>({});
   const [bulk, setBulk] = useState<{ running: boolean; done: number; total: number }>({ running: false, done: 0, total: 0 });
 
@@ -44,6 +49,18 @@ function InvestmentNewsPanel() {
   const cur = industries.find((i) => i.key === active) || industries[0];
   const hasData = !!data?.generated_at;
 
+  useEffect(() => {
+    if (digestSession.loaded) setDigests(digestSession.data ?? {});
+  }, [digestSession.loaded, digestSession.data]);
+
+  // 只存已出结果的那些：loading / needKey / err 是瞬态，存进去会恢复出一个卡在"生成中"的界面。
+  const flushDigests = () => setDigests((d) => {
+    const keep: Record<string, { text: string }> = {};
+    for (const [k, v] of Object.entries(d)) if (v.text) keep[k] = { text: v.text };
+    queueMicrotask(() => digestSession.save(keep));
+    return d;
+  });
+
   const genDigest = async (ind: Industry) => {
     if (!hasLlm()) { setDigests((d) => ({ ...d, [ind.key]: { needKey: true } })); return; }
     setDigests((d) => ({ ...d, [ind.key]: { loading: true } }));
@@ -58,6 +75,8 @@ function InvestmentNewsPanel() {
       });
     } catch (e) {
       setDigests((d) => ({ ...d, [ind.key]: { err: e instanceof ApiError ? e.message : "生成失败" } }));
+    } finally {
+      flushDigests();
     }
   };
 
@@ -141,6 +160,7 @@ function InvestmentNewsPanel() {
                   <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /> AI 正在读这个赛道的资讯…</p>
                 ) : dg?.text ? (
                   <>
+                    <AiStamp ts={digestSession.ts} className="mb-2" />
                     <div className="prose prose-sm prose-invert max-w-none text-foreground"><ReactMarkdown remarkPlugins={[remarkGfm]}>{dg.text}</ReactMarkdown></div>
                     <div className="mt-2"><SaveNoteButton kind="今日要点" title={`${cur.name} 今日要点`} content={dg.text} /></div>
                   </>

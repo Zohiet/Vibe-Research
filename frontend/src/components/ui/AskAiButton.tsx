@@ -1,14 +1,22 @@
 import { useState, useRef, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { Sparkles, X, Settings, Send, Loader2, Wrench, AlertCircle } from "lucide-react";
+import { Sparkles, X, Settings, Send, Loader2, Wrench, AlertCircle, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hasLlm, chatStream, type ChatMsg } from "@/lib/llm";
 import { ApiError } from "@/lib/api";
 import { SaveNoteButton } from "@/components/ui/SaveNoteButton";
+import { AiStamp } from "@/components/ui/AiStamp";
+import { useAiSession } from "@/hooks/useAiSession";
 
 interface Props {
   // 本分栏/本页要喂给用户 AI 的上下文，作为对话的系统上下文。
   context: string;
+  // 会话在后端内存里的标识（VR-GOAL-010）。**必填**——设成必填是为了让 tsc 把
+  // 每个调用点都报出来，漏一个都编译不过；本仓库最大的伤害源就是 git 不报的语义冲突。
+  //
+  // 命名按"对话是关于谁的"：portfolio / watchlist / stock:600519 / sector:ai-chain。
+  // **不能拿 context 去哈希**——context 里含实时行情，价格一跳 key 就变、对话就"丢"了。
+  sessionKey: string;
   suggestions?: string[];
   label?: string;
 }
@@ -28,13 +36,30 @@ const argStr = (a: Record<string, unknown>): string => {
 };
 
 interface ToolUse { name: string; arg: string }
+// aborted：这轮流是被中止的（切页/换问题），内容只有半截。
+// 之所以要保留而不是丢弃：**已生成的这些 token 早就付过费了**（API 按生成计费，
+// 订阅接入是已经 spawn 过的一次 CLI），中止只省下剩余部分，扔掉已收到的是纯亏。
+// 而 AI 习惯把结论放前面，半截答案常常仍然有用。
+type Msg = ChatMsg & { tools?: ToolUse[]; aborted?: boolean };
+
+/**
+ * 中止时怎么处理最后一条 assistant 气泡（VR-GOAL-010 决策 #9）。
+ * 抽成纯函数是为了让这段逻辑能被单独推理和评审——它有三个分支且都不显眼。
+ */
+export function finalizeOnAbort(msgs: Msg[]): Msg[] {
+  const last = msgs[msgs.length - 1];
+  if (!last || last.role !== "assistant") return msgs;
+  // 一个字都没收到 → 不留空气泡（维持原有行为，空泡看起来像出错）
+  if (!last.content) return msgs.slice(0, -1);
+  return [...msgs.slice(0, -1), { ...last, aborted: true }];
+}
 
 // 「问 AI」入口 —— 把当前分栏内容作为上下文，调用户自己配置的模型；
 // AI 可自行调 A股数据工具作答。结论由用户模型给出，本产品不校准、不负责。
-export function AskAiButton({ context, suggestions = [], label = "问 AI" }: Props) {
+export function AskAiButton({ context, sessionKey, suggestions = [], label = "问 AI" }: Props) {
   const [open, setOpen] = useState(false);
   const [configured, setConfigured] = useState(false);
-  const [msgs, setMsgs] = useState<(ChatMsg & { tools?: ToolUse[] })[]>([]);
+  const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -47,6 +72,19 @@ export function AskAiButton({ context, suggestions = [], label = "问 AI" }: Pro
   }, [open]);
 
   useEffect(() => () => abortRef.current?.abort(), []); // 组件卸载兜底
+
+  // 会话内存（VR-GOAL-010）：mount 就拉，不等打开面板——否则打开时会先闪一下空白。
+  const session = useAiSession<Msg[]>(sessionKey);
+  useEffect(() => {
+    if (!session.loaded) return;
+    // 必须写 `?? []` 而不是「有才设」：换股票时 key 变、新 key 没有存档，
+    // 不清空的话上一只股票的对话会留在这只股票的面板里。
+    setMsgs(session.data ?? []);
+  }, [session.loaded, session.data]);
+
+  // 把当前最新的 msgs 存进后端。**只在流结束/中止时调一次**——逐 delta 存就是每秒几十个请求。
+  // 用函数式 setState 读最新值（流刚跑完时 msgs 变量还是旧的），副作用挪出 updater 再执行。
+  const flush = () => setMsgs((m) => { queueMicrotask(() => session.save(m)); return m; });
 
   const close = () => {
     abortRef.current?.abort();
@@ -82,15 +120,26 @@ export function AskAiButton({ context, suggestions = [], label = "问 AI" }: Pro
         onDelta: (t) => { if (alive()) patchLast((msg) => ({ ...msg, content: msg.content + t })); },
       }, ac.signal);
     } catch (e) {
-      // 出错/中止：去掉尾部空 assistant 气泡；主动中止不算错误，不提示
-      setMsgs((m) => m.filter((msg, i) => !(i === m.length - 1 && msg.role === "assistant" && !msg.content)));
+      // 出错/中止：一个字都没收到就去掉空气泡，收到了半截就留着并标「已中断」
+      // （那些 token 已经付过费了，丢掉是纯亏）。主动中止不算错误，不提示。
+      setMsgs(finalizeOnAbort);
       if (!ac.signal.aborted) setErr(e instanceof ApiError ? e.message : "对话失败");
     } finally {
       if (abortRef.current === ac) {
         abortRef.current = null;
         setLoading(false);
       }
+      flush(); // 存档：正常跑完、出错、被中止，三条路都要落
     }
+  };
+
+  const clearChat = () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setLoading(false);
+    setErr(null);
+    setMsgs([]);
+    session.clear();
   };
 
   return (
@@ -111,9 +160,19 @@ export function AskAiButton({ context, suggestions = [], label = "问 AI" }: Pro
               <span className="flex items-center gap-2 font-semibold text-glow">
                 <Sparkles className="h-4 w-4 text-primary" /> 问 AI · 本页上下文
               </span>
-              <button onClick={close} className="text-muted-foreground hover:text-foreground">
-                <X className="h-4 w-4" />
-              </button>
+              <div className="flex items-center gap-3">
+                {/* 清空对话（VR-GOAL-010 决策 #10）：改成"切页也留着"之后，
+                    原来靠「切走再切回」重置对话的办法就没了，得把这个能力明确补回来。 */}
+                {msgs.length > 0 && (
+                  <button onClick={clearChat} title="清空这段对话，重新开始"
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive">
+                    <Trash2 className="h-3.5 w-3.5" /> 清空对话
+                  </button>
+                )}
+                <button onClick={close} className="text-muted-foreground hover:text-foreground">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
 
             {!configured ? (
@@ -137,6 +196,8 @@ export function AskAiButton({ context, suggestions = [], label = "问 AI" }: Pro
               // 已接入：真对话
               <>
                 <div ref={scrollRef} className="flex-1 space-y-3 overflow-auto p-4 text-sm">
+                  {/* 恢复出来的对话标上生成时间——三小时前那句「当前 PE 32 倍」现在可能已经不对了 */}
+                  {msgs.length > 0 && !loading && <AiStamp ts={session.ts} />}
                   {msgs.length === 0 && (
                     <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-xs text-muted-foreground">
                       AI 可基于本页上下文、并自行调取 A股行情/估值/研报数据作答。结论由你的模型给出，
@@ -160,6 +221,11 @@ export function AskAiButton({ context, suggestions = [], label = "问 AI" }: Pro
                           </div>
                         )}
                         <p className="whitespace-pre-wrap">{m.content}</p>
+                        {m.aborted && (
+                          <span className="mt-1 inline-block text-[10px] text-warning">
+                            · 已中断（切换页面时停了，内容只有半截）
+                          </span>
+                        )}
                         {m.role === "assistant" && m.content && !(loading && i === msgs.length - 1) && (
                           <div className="mt-1.5"><SaveNoteButton kind="问AI" title={`问 AI · ${msgs[i - 1]?.content?.slice(0, 24) || "对话"}`} content={m.content} /></div>
                         )}

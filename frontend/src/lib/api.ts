@@ -65,7 +65,7 @@ export async function downloadReport(id: string, name: string): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
-async function request<T>(path: string, method: "GET" | "POST" | "DELETE" = "GET", body?: unknown): Promise<T> {
+async function request<T>(path: string, method: "GET" | "POST" | "PUT" | "DELETE" = "GET", body?: unknown): Promise<T> {
   let resp: Response;
   const headers: Record<string, string> = { ...authHeaders() };
   const opts: RequestInit = { method };
@@ -300,6 +300,11 @@ export const api = {
   uploadReport: (name: string, contentB64: string) =>
     request<MyReport>("/myreports", "POST", { name, content_b64: contentB64 }),
   deleteReport: (id: string) => request<{ ok: boolean }>(`/myreports/${id}`, "DELETE"),
+  // AI 会话内存（VR-GOAL-010）：只在后端进程内存里，**绝不落盘**，后端一停就没。
+  aiSessionGet: <T>(key: string) => get<{ data: T | null; ts: number | null }>(`/aisession/${encodeURIComponent(key)}`),
+  aiSessionPut: (key: string, data: unknown) =>
+    request<{ ts: number }>(`/aisession/${encodeURIComponent(key)}`, "PUT", { data }),
+  aiSessionDelete: (key: string) => request<{ ok: boolean }>(`/aisession/${encodeURIComponent(key)}`, "DELETE"),
   myAccumulation: () => get<AccumulationList>("/myaccumulation"),
   pushNoteToWiki: (id: string) => request<{ path: string }>(`/myaccumulation/${id}/push-wiki`, "POST"),
   addAccumulation: (kind: string, title: string, content: string) =>
