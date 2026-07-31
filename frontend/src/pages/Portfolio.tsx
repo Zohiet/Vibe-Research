@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Plus, ShieldCheck, RefreshCw, Loader2, AlertCircle } from "lucide-react";
+import { Plus, ShieldCheck, RefreshCw, Loader2, AlertCircle, BookUp } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { AskAiButton } from "@/components/ui/AskAiButton";
@@ -20,6 +20,9 @@ export function Portfolio() {
   const [shares, setShares] = useState("");
   const [cost, setCost] = useState("");
   const [adding, setAdding] = useState(false);
+  // 投递持仓快照给 wiki（VR-GOAL-011）
+  const [pushing, setPushing] = useState(false);
+  const [pushMsg, setPushMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
   const load = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true);
@@ -38,6 +41,25 @@ export function Portfolio() {
     const t = setInterval(() => load(), REFRESH_MS); // 每半小时自动刷新
     return () => clearInterval(t);
   }, [load]);
+
+  async function pushSnapshot() {
+    setPushing(true);
+    setPushMsg(null);
+    try {
+      const r = await api.pushPortfolioToWiki();
+      // 文件名由后端给：前端解析 Windows 路径的反斜杠是纯粹的坑（实测踩过）
+      setPushMsg({
+        ok: true,
+        // 决策 #6 的落点：不加常驻机制去通知已开着的 wiki 会话，
+        // 把「跟它说一句」这个办法放在你刚好需要它的这一刻。
+        text: `已生成 ${r.name}，投进 wiki 待摄入队列。若 wiki 会话正开着，跟它说「看下收件箱」。`,
+      });
+    } catch (e) {
+      setPushMsg({ ok: false, text: e instanceof ApiError ? e.message : "投递失败" });
+    } finally {
+      setPushing(false);
+    }
+  }
 
   const add = async () => {
     if (!/^\d{6}$/.test(code.trim())) { setErr("请输入 6 位股票代码"); return; }
@@ -97,6 +119,14 @@ export function Portfolio() {
             {holdings.length > 0 && (
               <AskAiButton sessionKey="portfolio" context={aiContext} label="让 AI 看我的持仓"
                 suggestions={["我的持仓集中在哪些方向", "结构上有什么风险", "帮我梳理一下"]} />
+            )}
+            {data?.can_push && holdings.length > 0 && (
+              <button onClick={pushSnapshot} disabled={pushing}
+                title="把当前持仓生成一份带日期的快照，投进投资笔记的待摄入队列"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground disabled:opacity-50">
+                {pushing ? <Loader2 className="h-4 w-4 animate-spin" /> : <BookUp className="h-4 w-4" />}
+                {pushing ? "生成中…" : "生成 wiki 快照"}
+              </button>
             )}
             <button onClick={() => load(true)} disabled={refreshing}
               className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground disabled:opacity-50">
@@ -159,6 +189,14 @@ export function Portfolio() {
       {err && (
         <div className="mb-4 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
           <AlertCircle className="h-4 w-4 shrink-0" /> {err}
+        </div>
+      )}
+
+      {pushMsg && (
+        <div className={`mb-4 rounded-lg border p-3 text-sm ${pushMsg.ok
+          ? "border-success/30 bg-success/5 text-success"
+          : "border-destructive/30 bg-destructive/5 text-destructive"}`}>
+          {pushMsg.text}
         </div>
       )}
 

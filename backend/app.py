@@ -202,13 +202,51 @@ class HoldingIn(BaseModel):
     cost: float
 
 
+def _pf(d: dict) -> dict:
+    """给持仓数据补上 can_push（VR-GOAL-011）。
+
+    **所有返回持仓的端点都要过这里**——前端建完仓是直接拿 POST 的返回值刷新状态的，
+    漏一个端点，「生成 wiki 快照」按钮就会在那条路径上凭空消失（实测踩过）。
+    """
+    d["can_push"] = wikipush.status()["enabled"]
+    return d
+
+
 @app.get("/api/portfolio")
 def portfolio_get():
     """持仓 + 实时盈亏（浮动盈亏红涨绿跌）。"""
     try:
-        return {"data": pf.get_portfolio()}
+        return {"data": _pf(pf.get_portfolio())}
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"持仓读取异常：{e}") from e
+
+
+@app.post("/api/portfolio/push-wiki")
+def portfolio_push_wiki():
+    """把当前持仓生成成快照，投递进 wiki 的待摄入队列 raw/vr/。
+
+    刻意不直接改 wiki 的 portfolio.md：换了数字，它下面那些集中度/敞口/回本算术
+    就全错了，而重算需要判断、只能由 wiki agent 做——所以数字和结论要在同一刻更新。
+    """
+    try:
+        d = pf.get_portfolio()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"持仓读取异常：{e}") from e
+    if not d.get("holdings"):
+        raise HTTPException(400, "当前没有持仓，空快照没有意义")
+    # 行情接口挂掉时 price 会是 0，那样的快照全是 0 市值，投进 wiki 就是污染
+    if all(not h.get("price") for h in d["holdings"]):
+        raise HTTPException(400, "行情全部拉取失败，此时的快照不可用——请稍后重试")
+
+    date = datetime.now(pf.BEIJING).strftime("%Y-%m-%d")
+    try:
+        dest = wikipush.push_snapshot(pf.render_snapshot(d, date), date)
+    except wikipush.WikiUnavailable as e:
+        raise HTTPException(400, str(e)) from e
+    except OSError as e:
+        raise HTTPException(500, f"写入 wiki 失败：{e}") from e
+    # 一并返回文件名：让前端去解析 Windows 路径里的反斜杠是个纯粹的坑（实测踩过）。
+    return {"data": {"path": str(dest), "name": dest.name}}
 
 
 class ReduceIn(BaseModel):
@@ -228,7 +266,7 @@ def portfolio_add(h: HoldingIn):
         raise HTTPException(400, "数量必须大于 0")
     # 成本价不限正负：融券 / 返息 / 摊薄后为负成本等情形按结果计算，用户想怎么输就怎么输。
     try:
-        return {"data": pf.add_holding(code, h.shares, h.cost)}
+        return {"data": _pf(pf.add_holding(code, h.shares, h.cost))}
     except pf.MigrationBlocked as e:
         raise HTTPException(503, str(e)) from e
 
@@ -247,7 +285,7 @@ def portfolio_reduce(r: ReduceIn):
     except ValueError:
         raise HTTPException(400, "日期格式应为 YYYY-MM-DD") from None
     try:
-        return {"data": pf.reduce_holding(code, r.shares, r.price, date)}
+        return {"data": _pf(pf.reduce_holding(code, r.shares, r.price, date))}
     except pf.MigrationBlocked as e:
         raise HTTPException(503, str(e)) from e
     except ValueError as e:  # 股数 <=0 / 超过持仓 / 代码不在持仓中
@@ -258,7 +296,7 @@ def portfolio_reduce(r: ReduceIn):
 def portfolio_undo(txn_id: str):
     """撤销一笔交易：把操作前的持仓快照原样写回，并删除该条流水。"""
     try:
-        return {"data": pf.undo_transaction(txn_id.strip())}
+        return {"data": _pf(pf.undo_transaction(txn_id.strip()))}
     except pf.MigrationBlocked as e:
         raise HTTPException(503, str(e)) from e
     except ValueError as e:  # 找不到 / 不可撤销
@@ -268,7 +306,7 @@ def portfolio_undo(txn_id: str):
 @app.delete("/api/portfolio/holding")
 def portfolio_remove(code: str = Query(...)):
     try:
-        return {"data": pf.remove_holding(code.strip())}
+        return {"data": _pf(pf.remove_holding(code.strip()))}
     except pf.MigrationBlocked as e:
         raise HTTPException(503, str(e)) from e
 
@@ -429,7 +467,7 @@ def myaccumulation_delete(nid: str):
 def portfolio_refresh():
     """手动刷新：立即重拉行情算盈亏。"""
     try:
-        return {"data": pf.get_portfolio()}
+        return {"data": _pf(pf.get_portfolio())}
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"刷新失败：{e}") from e
 
