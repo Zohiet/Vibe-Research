@@ -7,6 +7,8 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { AskAiButton } from "@/components/ui/AskAiButton";
 import { Disclaimer } from "@/components/ui/Disclaimer";
+import { AiStamp } from "@/components/ui/AiStamp";
+import { useAiSession } from "@/hooks/useAiSession";
 import { api, ApiError, type IndexQuote, type Quote, type MarketOverview, type ShortTermEmotion, type TurnoverTop, type GlobalIndex } from "@/lib/api";
 import { hasLlm, chatStream } from "@/lib/llm";
 import { SaveNoteButton } from "@/components/ui/SaveNoteButton";
@@ -22,6 +24,9 @@ const yi = (v: number | null) => (v == null ? "—" : `${fmt(v / 1e8)} 亿`); //
 export function DailyReview() {
   const [indices, setIndices] = useState<IndexQuote[]>([]);
   const [idxErr, setIdxErr] = useState(false);
+  // AI 复盘存后端进程内存（VR-GOAL-010）：切页/刷新还在，后端一停就没。
+  // 隔天不自动丢弃——统一由 <AiStamp> 标出「昨天」，判断交还用户（决策 #8）。
+  const reviewSession = useAiSession<string>("daily-review");
   const [review, setReview] = useState("");
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewErr, setReviewErr] = useState<string | null>(null);
@@ -86,6 +91,10 @@ export function DailyReview() {
     ? indices.map((i) => `${i.name} ${i.price}（${i.change_pct > 0 ? "+" : ""}${i.change_pct}%）`).join("；")
     : "（指数数据未取到）";
 
+  useEffect(() => {
+    if (reviewSession.loaded) setReview(reviewSession.data ?? "");
+  }, [reviewSession.loaded, reviewSession.data]);
+
   const runReview = async () => {
     setReviewErr(null);
     setNeedConfig(false);
@@ -104,6 +113,8 @@ export function DailyReview() {
       setReviewErr(e instanceof ApiError ? e.message : "复盘失败");
     } finally {
       setReviewLoading(false);
+      // 只在结束时存一次——逐 delta 存就是每秒几十个请求
+      setReview((r) => { queueMicrotask(() => reviewSession.save(r)); return r; });
     }
   };
 
@@ -127,6 +138,7 @@ export function DailyReview() {
         subtitle={`${today} · 大盘 / 情绪 / 板块资金一屏看全，交给你的 AI 做复盘`}
         actions={
           <AskAiButton
+            sessionKey="daily-review"
             context={`今日大盘数据：${dataSummary}`}
             label="问 AI"
             suggestions={["今天大盘怎么走", "哪些指数领涨领跌", "盘面有什么值得注意"]}
@@ -247,6 +259,7 @@ export function DailyReview() {
         )}
         {review ? (
           <>
+            {!reviewLoading && <AiStamp ts={reviewSession.ts} className="mt-3" />}
             <div className="prose prose-sm prose-invert mt-4 max-w-none text-foreground"><ReactMarkdown remarkPlugins={[remarkGfm]}>{review}</ReactMarkdown></div>
             {!reviewLoading && <div className="mt-3"><SaveNoteButton kind="复盘" title={`每日复盘 ${today}`} content={review} /></div>}
           </>

@@ -8,6 +8,8 @@ import { Disclaimer } from "@/components/ui/Disclaimer";
 import { listNotes, deleteNote, clearNotes, addNote, migrateLocalNotes, pushToWiki } from "@/lib/notes";
 import { reflectStream } from "@/lib/agents";
 import { ApiError, type Note } from "@/lib/api";
+import { AiStamp } from "@/components/ui/AiStamp";
+import { useAiSession } from "@/hooks/useAiSession";
 
 const KIND_COLOR: Record<string, string> = {
   复盘: "bg-primary/15 text-primary",
@@ -27,6 +29,9 @@ export function Notes() {
   const [reflectText, setReflectText] = useState("");
   const [reflectErr, setReflectErr] = useState("");
   const [reflecting, setReflecting] = useState(false);
+  // 反思结果存后端进程内存（VR-GOAL-010）。整份 Record 存一个 key——
+  // 若按 reflect:<noteId> 分开存，进页面时没人知道该拉哪些 id，等于永远恢复不出来。
+  const reflectSession = useAiSession<Record<string, string>>("reflect");
   const [reflectSaved, setReflectSaved] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   // 投递进 wiki（VR-GOAL-009）：wikiErr 是「配了但目录读不到」的原因；
@@ -55,6 +60,9 @@ export function Notes() {
     }
   }
 
+  // 已生成过的反思：noteId → 正文。展开某条时若有存档就直接显示，不必重跑 AI。
+  const reflects = reflectSession.data ?? {};
+
   async function runReflect(n: Note) {
     abortRef.current?.abort();
     const ctrl = new AbortController();
@@ -71,6 +79,11 @@ export function Notes() {
       }
     } finally {
       setReflecting(false);
+      // 结束时存一次（跑完 / 出错 / 中止都走这里）
+      setReflectText((t) => {
+        if (t) queueMicrotask(() => reflectSession.save({ ...reflects, [n.id]: t }));
+        return t;
+      });
     }
   }
 
@@ -215,14 +228,15 @@ export function Notes() {
                       </p>
                     )}
 
-                    {reflectId === n.id && (reflectText || reflectErr) && (
+                    {((reflectId === n.id && (reflectText || reflectErr)) || reflects[n.id]) && (
                       <div className="mt-3 rounded-lg border border-violet-500/30 bg-violet-500/[0.05] p-3">
-                        {reflectErr ? (
+                        {reflectId === n.id && reflectErr ? (
                           <p className="text-xs text-destructive">{reflectErr}</p>
                         ) : (
                           <>
+                            {reflectId !== n.id && <AiStamp ts={reflectSession.ts} className="mb-2" />}
                             <div className="prose prose-sm prose-invert max-w-none text-foreground">
-                              <ReactMarkdown remarkPlugins={[remarkGfm]}>{reflectText}</ReactMarkdown>
+                              <ReactMarkdown remarkPlugins={[remarkGfm]}>{reflectId === n.id ? reflectText : reflects[n.id]}</ReactMarkdown>
                             </div>
                             {!reflecting && (
                               <button onClick={() => saveReflection(n)} disabled={reflectSaved}

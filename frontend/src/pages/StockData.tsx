@@ -199,6 +199,7 @@ export function StockData() {
         subtitle="行情 · 估值 · 研报 · 新闻 —— 客观数据配齐，判断交给你的 AI"
         actions={(val || gstock) && (
           <AskAiButton
+            sessionKey={`stock:${(gstock?.code || code || "empty")}`}
             context={gstock ? gAiContext : aiContext}
             label="让 AI 读这些数据"
             suggestions={gstock

@@ -1,5 +1,7 @@
-import { useRef, useState } from "react";
-import { Swords, Play, Square, Save, CheckCircle2, Circle, AlertTriangle } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { AiStamp } from "@/components/ui/AiStamp";
+import { useAiSession } from "@/hooks/useAiSession";
+import { Swords, Play, Square, Save, CheckCircle2, Circle, AlertTriangle, Trash2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -29,6 +31,15 @@ const STAGE_TONE: Record<DebateStage, string> = {
 const DOSSIER_HINT = "多空双方拿到的是同一份接口实时拉取的数据，谁也不能靠编数字赢。";
 
 export function Debate() {
+  // 辩论存后端进程内存（VR-GOAL-010）。
+  //
+  // **与 Plan 的偏差**：Plan 写的 key 是 `debate:<code>`，但那样永远恢复不出来——
+  // 进页面时 code 是空的，拿不到 key 就没得恢复，你得先把代码原样敲一遍才看得见上次的结果。
+  // 改成单个 key `debate`，把 code 一起存进去：进页面就看到上次那场，代码框也自动填好。
+  const session = useAiSession<{
+    code: string; rounds: number; stages: StageBox[];
+    progress: { title: string; ok: boolean }[]; missing: string[]; status: string;
+  }>("debate");
   const [code, setCode] = useState("");
   const [rounds, setRounds] = useState(1);
   const [running, setRunning] = useState(false);
@@ -44,6 +55,16 @@ export function Debate() {
     setStatus(""); setProgress([]); setMissing([]); setStages([]); setError(""); setSaved(false);
   };
 
+  // 清空这场辩论（决策 #10：改成"切页也留着"之后，要把重置能力明确补回来）
+  const clearSession = () => { reset(); session.clear(); };
+
+  useEffect(() => {
+    if (!session.loaded || !session.data) return;
+    const d = session.data;
+    setCode(d.code); setRounds(d.rounds); setStages(d.stages);
+    setProgress(d.progress); setMissing(d.missing); setStatus(d.status);
+  }, [session.loaded, session.data]);
+
   async function start() {
     const c = code.trim();
     if (!/^\d{6}$/.test(c)) { setError("请输入 6 位 A 股代码"); return; }
@@ -51,29 +72,42 @@ export function Debate() {
     setRunning(true);
     const ctrl = new AbortController();
     abortRef.current = ctrl;
+
+    // 本地副本与 React 状态同步更新：finally 里要存档，而那时 React 状态变量还是旧闭包值。
+    // 直接读本地副本，不依赖批处理时机（比在 finally 里套几层 setState 读最新值清楚得多）。
+    let stg: StageBox[] = [];
+    let prg: { title: string; ok: boolean }[] = [];
+    let mis: string[] = [];
+    let sta = "";
+    const setSta = (v: string) => { sta = v; setStatus(v); };
+    const setStg = (v: StageBox[]) => { stg = v; setStages(v); };
+
     try {
       await debateStream(c, rounds, {
-        onStatus: setStatus,
+        onStatus: setSta,
         onDossierProgress: (title, ok, loaded, total) => {
-          setStatus(`正在拉取客观事实底稿… ${loaded}/${total}`);
-          setProgress((p) => [...p, { title, ok }]);
+          setSta(`正在拉取客观事实底稿… ${loaded}/${total}`);
+          prg = [...prg, { title, ok }];
+          setProgress(prg);
         },
-        onDossierReady: (_sections, miss) => { setMissing(miss); setStatus("底稿就绪，辩论开始"); },
-        onStageStart: (stage, label) =>
-          setStages((s) => [...s, { stage, label, content: "", done: false }]),
+        onDossierReady: (_sections, miss) => { mis = miss; setMissing(miss); setSta("底稿就绪，辩论开始"); },
+        onStageStart: (stage, label) => setStg([...stg, { stage, label, content: "", done: false }]),
         onDelta: (stage, text) =>
-          setStages((s) => s.map((b) => (b.stage === stage && !b.done ? { ...b, content: b.content + text } : b))),
+          setStg(stg.map((b) => (b.stage === stage && !b.done ? { ...b, content: b.content + text } : b))),
         onStageDone: (stage, _label, content) =>
-          setStages((s) => s.map((b) => (b.stage === stage && !b.done ? { ...b, content, done: true } : b))),
+          setStg(stg.map((b) => (b.stage === stage && !b.done ? { ...b, content, done: true } : b))),
         onError: (message, stage) => setError(stage ? `${stage}：${message}` : message),
       }, ctrl.signal);
-      setStatus("辩论完成");
+      setSta("辩论完成");
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") setStatus("已中止");
       else setError(e instanceof ApiError ? e.message : String(e));
     } finally {
       setRunning(false);
       abortRef.current = null;
+      // 结束时存一次（跑完 / 出错 / 中止三条路都走这里）。四份状态一起存——
+      // 只恢复 stages 而 progress 空着，看起来像跑了一半。
+      if (stg.length > 0) session.save({ code: c, rounds, stages: stg, progress: prg, missing: mis, status: sta });
     }
   }
 
@@ -138,6 +172,13 @@ export function Debate() {
               <Play className="h-4 w-4" /> 开始辩论
             </button>
           )}
+          {/* 清空这场（决策 #10）：辩论现在会留到后端重启，得有个明确的重置入口 */}
+          {stages.length > 0 && !running && (
+            <button onClick={clearSession}
+              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:text-destructive">
+              <Trash2 className="h-4 w-4" /> 清空这场
+            </button>
+          )}
           {finished && !running && (
             <button onClick={save} disabled={saved}
               className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 px-4 py-2 text-sm text-muted-foreground hover:text-foreground disabled:opacity-50">
@@ -158,6 +199,7 @@ export function Debate() {
         )}
 
         {status && <p className="mt-3 text-xs text-muted-foreground">{status}</p>}
+        {!running && stages.length > 0 && <AiStamp ts={session.ts} className="mt-2" />}
         {error && (
           <p className="mt-3 flex items-start gap-1.5 text-xs text-destructive">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {error}
