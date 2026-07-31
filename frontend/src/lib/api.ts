@@ -214,6 +214,8 @@ export interface PortfolioData {
   realized_pnl: number;
   /** 数据迁移失败时为 true：写操作已被后端暂停（503），只能读 */
   migration_blocked: boolean;
+  /** 能不能把持仓快照投给 wiki（VR-GOAL-011）。未配 VR_WIKI_DIR 时为 false，按钮不渲染 */
+  can_push?: boolean;
   updated: string; last_refresh: string | null;
 }
 
@@ -270,6 +272,7 @@ export const api = {
   radar: () => get<RadarData>("/radar"),
   radarRefresh: () => request<RadarData>("/radar/refresh", "POST"),
   portfolio: () => get<PortfolioData>("/portfolio"),
+  pushPortfolioToWiki: () => request<{ path: string; name: string }>("/portfolio/push-wiki", "POST"),
   addHolding: (code: string, shares: number, cost: number) => request<PortfolioData>("/portfolio/holding", "POST", { code, shares, cost }),
   removeHolding: (code: string) => request<PortfolioData>(`/portfolio/holding?code=${code}`, "DELETE"),
   refreshPortfolio: () => request<PortfolioData>("/portfolio/refresh", "POST"),

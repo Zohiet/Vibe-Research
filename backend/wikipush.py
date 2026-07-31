@@ -99,6 +99,31 @@ def target_name(src: Path, note_id: str) -> str:
     return f"{src.stem}_{note_id[:_ID_LEN]}.md"
 
 
+SNAPSHOT_PREFIX = "持仓快照_"
+
+
+def push_snapshot(text: str, date: str) -> Path:
+    """写一份持仓快照进收件箱，并清掉**未摄入的**旧快照。返回落地路径。
+
+    为什么要清旧的：旧快照没有任何价值——你要的是"现在的持仓"。留着只会让 wiki agent
+    犹豫用哪份，而「该用哪份」永远只有一个正确答案（最新那份）。
+    **把有唯一答案的事留给人判断，就是在制造出错机会。**
+
+    ⚠️ 只删 `raw/vr/` 这一层里前缀匹配的文件：
+    - `ingested/` 里的是历史，一个字都不动
+    - 沉淀文件（`YYYY-MM-DD_HHMMSS_标题_id8.md`）前缀不同，不会被误伤
+    这两条有硬测试盯着——这段逻辑离"清空整个收件箱"只有一个通配符的距离。
+    """
+    root = _require_wiki()
+    dest_dir = root.joinpath(*_VR_SUB)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    for old in dest_dir.glob(f"{SNAPSHOT_PREFIX}*.md"):
+        old.unlink(missing_ok=True)
+    dest = dest_dir / f"{SNAPSHOT_PREFIX}{date}.md"
+    dest.write_text(text, encoding="utf-8")
+    return dest
+
+
 def push(src: Path, note_id: str) -> Path:
     """把一条沉淀原样复制进 wiki 的待摄入队列，返回落地路径。
 

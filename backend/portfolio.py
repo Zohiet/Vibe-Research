@@ -332,3 +332,80 @@ def start_scheduler(interval: int = 1800) -> None:
             except Exception:
                 pass
     threading.Thread(target=loop, daemon=True).start()
+
+
+# ── 持仓快照（VR-GOAL-011）──────────────────────────────────────────
+# 生成一份**通用 markdown** 的持仓快照，供投递到 llm-wiki 知识库。
+#
+# 三条不能破的：
+# - **纯函数**：只吃 get_portfolio() 的结果 + 日期，吐字符串。不写文件、不碰 wiki、
+#   不读环境变量——这样验收项 2/3/6 能直接断言文本，不必起服务、不必造假 wiki。
+# - **不用 wiki 的私有语法**（不写 [[wikilink]]、不写 wiki 的 frontmatter 约定）。
+#   判断标准是「这份文件离开 wiki 还有没有意义」：通用表格有，带 wikilink 的片段没有。
+#   同构就是耦合——wiki 改目录结构，带 wikilink 的输出就废了。
+# - **必须附交易流水**：只有持仓的快照说不清一件事——某个标的从上一份快照里消失了，
+#   到底是清仓了还是忘了录？流水才是那个答案。
+
+def _fmt(v: float, nd: int = 2) -> str:
+    """数字转字符串：整数不留小数尾巴，其余按 nd 位。"""
+    if v is None:
+        return ""
+    s = f"{v:,.{nd}f}"
+    return s.rstrip("0").rstrip(".") if "." in s else s
+
+
+def render_snapshot(pf: dict, date: str) -> str:
+    """持仓 + 流水 → 通用 markdown 快照文本。date 形如 2026-07-31。"""
+    hs = pf.get("holdings", [])
+    tot = pf.get("totals", {})
+    txns = pf.get("transactions", [])
+
+    L = [
+        "---",
+        "kind: 持仓快照",
+        f"date: {date}",
+        "source: Vibe-Research",
+        "---",
+        "",
+        f"# 持仓快照 · {date}",
+        "",
+        "> 由 Vibe-Research 生成。**持仓的真相源是 VR**，本文件是该时点的冻结副本。",
+        "> 数字会随行情变化，但这份快照不会——它记录的是生成那一刻的事实。",
+        "",
+        "## 持仓",
+        "",
+        "| 代码 | 名称 | 数量 | 成本 | 现价 | 市值 | 盈亏 | 盈亏% |",
+        "|---|---|---:|---:|---:|---:|---:|---:|",
+    ]
+    for h in hs:
+        L.append(
+            f"| {h.get('code','')} | {h.get('name','')} | {_fmt(h.get('shares',0))} | "
+            f"{_fmt(h.get('cost',0), 4)} | {_fmt(h.get('price',0), 4)} | "
+            f"{_fmt(h.get('market_value',0))} | {_fmt(h.get('pnl',0))} | {_fmt(h.get('pnl_pct',0))}% |"
+        )
+    if hs:
+        L.append(
+            f"| **合计** | | | | | **{_fmt(tot.get('market_value',0))}** | "
+            f"**{_fmt(tot.get('pnl',0))}** | **{_fmt(tot.get('pnl_pct',0))}%** |"
+        )
+    L += ["", f"总成本 {_fmt(tot.get('cost', 0))} 元 → 当前市值 {_fmt(tot.get('market_value', 0))} 元。", ""]
+
+    L += [
+        "## 交易流水",
+        "",
+        "> 用来解释持仓的变化：某个标的从上一份快照里消失，是清仓了还是漏录了，看这里。",
+        "",
+        "| 日期 | 类型 | 代码 | 名称 | 数量 | 价格 | 已实现盈亏 |",
+        "|---|---|---|---|---:|---:|---:|",
+    ]
+    for t in txns:
+        kind = "卖出" if t.get("type") == "sell" else "买入"
+        pnl = _fmt(t.get("pnl", 0)) if t.get("type") == "sell" else ""
+        L.append(
+            f"| {t.get('date','')} | {kind} | {t.get('code','')} | {t.get('name','')} | "
+            f"{_fmt(t.get('shares',0))} | {_fmt(t.get('price',0), 4)} | {pnl} |"
+        )
+    if not txns:
+        L.append("| — | — | — | — | — | — | — |")
+    L += ["", f"**累计已实现盈亏：{_fmt(pf.get('realized_pnl', 0))} 元**", ""]
+    return "\n".join(L)
