@@ -192,12 +192,23 @@ def test_cached_skips_empty():
 # ── akshare 未安装：market 降级返回空，不挡服务 ─────────────────────
 
 def test_market_degrades_without_akshare(monkeypatch):
+    """akshare 没装时不能挂掉整个服务——但**要说出来**，不能静默。
+
+    VR-GOAL-014 改了契约：`_sentiment()` / `_sectors()` 不再自己吞异常返回空
+    （那正是让乐咕改版潜伏很久的原因），改由 `get_overview()` 统一捕获并把原因带出去。
+    降级的意图没变，变的是"降级之后有没有人知道"。
+    """
     def boom():
         raise astock.DependencyMissing("akshare 未安装")
 
     monkeypatch.setattr(astock, "_akshare", boom)
-    assert market._sentiment() == {}
-    assert market._sectors() == []
+    market._CACHE.clear()
+
+    d = market.get_overview()          # 不抛，服务照常
+    assert d["sentiment"] is None      # 不是 {}：调用方要能分辨"没取到"
+    assert d["sectors"] == []
+    assert "akshare 未安装" in d["errors"]["sentiment"]   # 原因一路带到出参
+    assert "akshare 未安装" in d["errors"]["sectors"]
 
 
 # ── 流式工具调用：非标网关不带 index 时按 id 归位、不串参数 ──────────

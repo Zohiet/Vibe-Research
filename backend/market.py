@@ -38,16 +38,31 @@ def _num(v) -> int:
 
 
 def _sentiment() -> dict:
-    """市场情绪：涨跌家数/涨停跌停/活跃度 + 大盘宽度、题材投机（客观数据机械分档）。"""
-    try:
-        # akshare 惰性导入（同 astock 模式）：未装时降级返回空，不挡整个服务启动
-        df = astock._akshare().stock_market_activity_legu()
-        d = {row["item"]: row["value"] for _, row in df.iterrows()}
-    except Exception:
-        return {}
-    up, down, flat = _num(d.get("上涨")), _num(d.get("下跌")), _num(d.get("平盘"))
-    zt, zt_real = _num(d.get("涨停")), _num(d.get("真实涨停"))
-    dt, dt_real = _num(d.get("跌停")), _num(d.get("真实跌停"))
+    """市场情绪：涨跌家数 + 大盘宽度、题材投机（客观数据机械分档）。
+
+    数据源 = **同花顺行业板块汇总**，把 90 个行业的「上涨/下跌家数」加总成全市场宽度。
+    实测这 90 个行业是**不重叠的完整划分**：Σ上涨 4691 + Σ下跌 728 = 5419 ≈ A股总数 5545
+    （差额为平盘/停牌），可以直接加总。
+
+    ⚠️ **不要换回 akshare 的 `stock_market_activity_legu()`（乐咕）**——
+    2026-08-01 实测它已 `AttributeError`（页面改版，`div.current-index` 选择器失效），
+    而且它坏了很久没人发现：老代码 `except: return {}` 把异常吞成空 dict，
+    前端只看到一片空白、AI 只看到"没数据"，直到 AI 自己编了段免责声明才被注意到。
+
+    ⚠️ **也不要换成东财 clist 的 f104/f105**——数据同样正确，但东财对大陆住宅 IP
+    有**间歇风控**（`a-stock-data/SKILL.md:41` 记载，「非代码 Bug」）。同花顺是
+    **另一个风控面**：实测东财 clist 全挂的那一刻，它照常返回。
+    而且 `_sectors()` 本来就在打同花顺，不引入新的依赖面。
+
+    **失败时抛异常，不返回空 dict** —— 让调用方能把原因带给用户和 AI。
+    """
+    # akshare 惰性导入（同 astock 模式）；装不上时 DependencyMissing 由调用方转成可见错误
+    df = astock._akshare().stock_board_industry_summary_ths()
+    up = _num(df["上涨家数"].sum())
+    down = _num(df["下跌家数"].sum())
+    # 该源不提供平盘家数 —— **不返回假的 0**，没有就是没有。
+    # 涨停/跌停也不在这里给：页面「短线情绪」区已用打板四池（get_emotion）显示，
+    # 这里再给一份就是同一数字两个来源，迟早对不上。
     r = up / max(down, 1)
     if up < 600:
         breadth = "冰点"
@@ -59,23 +74,16 @@ def _sentiment() -> dict:
         breadth = "偏强"
     else:
         breadth = "普涨"
-    speculation = "亢奋" if zt_real >= 100 else "活跃" if zt_real >= 60 else "普通" if zt_real >= 30 else "冰点"
     return {
-        "up": up, "down": down, "flat": flat,
-        "zt": zt, "zt_real": zt_real, "dt": dt, "dt_real": dt_real,
-        "active": str(d.get("活跃度", "")),
-        "breadth": breadth, "speculation": speculation,
-        "date": str(d.get("统计日期", "")),
+        "up": up, "down": down, "breadth": breadth,
+        "date": datetime.now(BEIJING).strftime("%Y-%m-%d"),
     }
 
 
 def _sectors() -> list[dict]:
     """行业资金流（按净额降序）。不含领涨股等个股字段。"""
-    try:
-        f = astock._akshare().stock_fund_flow_industry(symbol="即时")
-        f = f.sort_values("净额", ascending=False)
-    except Exception:
-        return []
+    f = astock._akshare().stock_fund_flow_industry(symbol="即时")
+    f = f.sort_values("净额", ascending=False)
     out = []
     for _, row in f.iterrows():
         out.append({
@@ -89,15 +97,48 @@ def _sectors() -> list[dict]:
     return out
 
 
+def _try(key: str, fn):
+    """取一块数据：成功则缓存并返回 (值, None)；失败返回 (None, 原因)。
+
+    **每块独立缓存**（VR-GOAL-014）。旧写法是整个 overview 一个缓存、判据
+    `sentiment or sectors`——于是「sentiment 空、sectors 有」这种**部分失败被当成有效**
+    存了 5 分钟，坏掉的那半连重试机会都没有，问题被藏起来。
+
+    也刻意**没有**改成 `and`（"两个都成功才缓存"）：那会让长期失败的一块拖着好的那块
+    **每次请求都重抓上游**，而反复重抓正是把本机打进东财风控的行为。
+    正确的形状是：**成功的不重抓、失败的下次重试** —— 只能靠分开缓存表达。
+    """
+    now = time.time()
+    hit = _CACHE.get(key)
+    if hit and now - hit[0] < _TTL:
+        return hit[1], None
+    try:
+        val = fn()
+    except Exception as e:  # noqa: BLE001
+        # 不吞异常：原因要一路带到界面和 AI 的 context（今天这个 bug 就是被吞掉才潜伏这么久）
+        return None, f"{type(e).__name__}: {e}"[:200]
+    if not val:
+        return None, "数据源返回空"
+    _CACHE[key] = (now, val)
+    return val, None
+
+
 def get_overview() -> dict:
-    """市场情绪 + 板块资金（含缓存）。资金轮动由前端从 sectors 头尾取。"""
-    def build():
-        return {
-            "sentiment": _sentiment(),
-            "sectors": _sectors(),
-            "updated": datetime.now(BEIJING).strftime("%Y-%m-%d %H:%M"),
-        }
-    return _cached("overview", build, valid=lambda v: bool(v.get("sentiment") or v.get("sectors")))
+    """市场情绪 + 板块资金。**两块各自独立缓存、各自独立失败。**
+
+    出参多一个 `errors`：哪块没取到、为什么。取不到的块是 `null` 而不是 `{}`/`[]`——
+    `{}` 是"合法的空"，前端不会走任何错误分支；`null` + `errors` 才能让调用方
+    分辨「本来就没有」和「这次没取到」。
+    """
+    sentiment, e1 = _try("sentiment", _sentiment)
+    sectors, e2 = _try("sectors", _sectors)
+    errors = {k: v for k, v in (("sentiment", e1), ("sectors", e2)) if v}
+    return {
+        "sentiment": sentiment,
+        "sectors": sectors or [],
+        "errors": errors,
+        "updated": datetime.now(BEIJING).strftime("%Y-%m-%d %H:%M"),
+    }
 
 
 def _emotion() -> dict:

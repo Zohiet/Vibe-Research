@@ -158,15 +158,21 @@ export interface IndexQuote {
   name: string; price: number; change_pct: number; change_amt: number;
 }
 
+// 市场宽度（VR-GOAL-014 起由同花顺行业板块加总得出）。
+// **涨停/跌停不在这里**——页面「短线情绪」区已用打板四池显示，同一数字两个来源迟早对不上。
 export interface MarketSentiment {
-  up: number; down: number; flat: number; zt: number; zt_real: number; dt: number; dt_real: number;
-  active: string; breadth: string; speculation: string; date: string;
+  up: number; down: number; breadth: string; date: string;
 }
 export interface SectorFlow {
   name: string; pct: number; net: number; inflow: number; outflow: number; firms: number;
 }
 export interface MarketOverview {
-  sentiment: MarketSentiment; sectors: SectorFlow[]; updated: string;
+  /** 取不到时为 **null**（不是 {}）——`{}` 是"合法的空"，不会走任何错误分支 */
+  sentiment: MarketSentiment | null;
+  sectors: SectorFlow[];
+  /** 哪一块没取到、为什么。两块各自独立失败、各自独立缓存 */
+  errors: Record<string, string>;
+  updated: string;
 }
 
 // 短线情绪：连板梯队 / 最高连板 / 炸板率 / 封板率 / 晋级率 / 涨跌停家数 + 连板股清单（客观公开榜单）

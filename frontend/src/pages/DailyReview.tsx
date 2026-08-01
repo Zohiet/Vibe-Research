@@ -9,7 +9,7 @@ import { AskAiButton } from "@/components/ui/AskAiButton";
 import { Disclaimer } from "@/components/ui/Disclaimer";
 import { AiStamp } from "@/components/ui/AiStamp";
 import { useAiSession } from "@/hooks/useAiSession";
-import { api, ApiError, type IndexQuote, type Quote, type MarketOverview, type ShortTermEmotion, type TurnoverTop, type GlobalIndex } from "@/lib/api";
+import { api, ApiError, type IndexQuote, type Quote, type MarketOverview, type MarketSentiment, type SectorFlow, type ShortTermEmotion, type TurnoverTop, type GlobalIndex } from "@/lib/api";
 import { hasLlm, chatStream } from "@/lib/llm";
 import { SaveNoteButton } from "@/components/ui/SaveNoteButton";
 import { loadWatch, saveWatch, addCodes } from "@/lib/watchlist";
@@ -20,6 +20,48 @@ import { cn } from "@/lib/utils";
 const pctColor = (p: number) => (p > 0 ? "text-danger" : p < 0 ? "text-success" : "text-muted-foreground");
 const fmt = (v: number) => v.toLocaleString("zh-CN", { maximumFractionDigits: 2 });
 const yi = (v: number | null) => (v == null ? "—" : `${fmt(v / 1e8)} 亿`); // 元 → 亿
+
+type CtxIn = {
+  indices: IndexQuote[]; sentiment: MarketSentiment | null; sectors: SectorFlow[];
+  emotion: ShortTermEmotion | null; turnover: TurnoverTop | null; sentErr?: string;
+};
+
+/** 组装喂给 AI 的大盘上下文。纯函数——便于直接断言内容，不必起浏览器。 */
+export function buildContext({ indices, sentiment, sectors, emotion, turnover, sentErr }: CtxIn): string {
+  const L: string[] = [];
+
+  L.push(indices.length
+    ? "指数：" + indices.map((i) => `${i.name} ${i.price}（${i.change_pct > 0 ? "+" : ""}${i.change_pct}%）`).join("；")
+    : "指数：本次取不到");
+
+  if (sentiment) {
+    L.push(`市场宽度：上涨 ${sentiment.up} 家 / 下跌 ${sentiment.down} 家，${sentiment.breadth}`);
+  } else {
+    L.push(`市场宽度：**本次取不到**${sentErr ? `（${sentErr}）` : ""}`);
+  }
+
+  if (emotion?.zt_count !== undefined) {
+    L.push(`打板情绪：涨停 ${emotion.zt_count} / 跌停 ${emotion.dt_count} / 炸板 ${emotion.zb_count}，`
+      + `最高 ${emotion.max_boards} 板，封板率 ${emotion.seal_rate}，炸板率 ${emotion.break_rate}`);
+  } else {
+    L.push("打板情绪：本次取不到");
+  }
+
+  if (sectors.length) {
+    const fmt = (x: SectorFlow) => `${x.name}（${x.pct > 0 ? "+" : ""}${x.pct}%，净额 ${x.net}）`;
+    L.push("板块资金流入前 5：" + sectors.slice(0, 5).map(fmt).join("；"));
+    L.push("流出前 5：" + sectors.slice(-5).reverse().map(fmt).join("；"));
+  } else {
+    L.push("板块资金：本次取不到");
+  }
+
+  if (turnover?.stocks?.length) {
+    L.push("全市场成交额 TOP10：" + turnover.stocks.slice(0, 10)
+      .map((x) => `${x.name} ${x.amount ?? "—"} 亿`).join("；"));
+  }
+
+  return L.join(String.fromCharCode(10));
+}
 
 export function DailyReview() {
   const [indices, setIndices] = useState<IndexQuote[]>([]);
@@ -87,9 +129,15 @@ export function DailyReview() {
 
   const today = new Date().toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" });
 
-  const dataSummary = indices.length
-    ? indices.map((i) => `${i.name} ${i.price}（${i.change_pct > 0 ? "+" : ""}${i.change_pct}%）`).join("；")
-    : "（指数数据未取到）";
+  // 喂给 AI 的本页上下文（VR-GOAL-014 富化）。
+  //
+  // 原来这里**只拼四大指数**——而页面早就把涨跌家数、板块榜、成交额都加载好了，
+  // 一样都没给 AI。订阅接入（CLI）没有 function-calling 时 context 是唯一通道，
+  // 于是 AI 只能凭四个数字复盘，并自己编出一段「数据工具未接入」的免责声明。
+  //
+  // **取不到的项要显式写"本次取不到"**，不能默默省略：
+  // 明说缺了什么，AI 就能准确报告缺什么；什么都不说，它只能猜。
+
 
   useEffect(() => {
     if (reviewSession.loaded) setReview(reviewSession.data ?? "");
@@ -118,17 +166,25 @@ export function DailyReview() {
     }
   };
 
-  const sentiment = overview?.sentiment;
+  const sentiment = overview?.sentiment ?? null;
   const sectors = overview?.sectors || [];
+
+  // 喂给 AI 的本页上下文（VR-GOAL-014 富化）。
+  //
+  // 原来这里**只拼四大指数**——而页面早就把涨跌家数、板块榜、成交额都加载好了，
+  // 一样都没给 AI。订阅接入（CLI）没有 function-calling 时 context 是唯一通道，
+  // 于是 AI 只能凭四个数字复盘，并自己编出一段「数据工具未接入」的免责声明。
+  //
+  // **取不到的项要显式写"本次取不到"**，不能默默省略：
+  // 明说缺了什么，AI 就能准确报告缺什么；什么都不说，它只能猜。
+  const dataSummary = buildContext({
+    indices, sentiment, sectors, emotion, turnover, sentErr: overview?.errors?.sentiment,
+  });
+  // 只列新数据源真的有的。**涨停/跌停不在这儿**——下面「短线情绪」区已用打板四池显示，
+  // 同一个数字两个来源，迟早会对不上。
   const sentCells = sentiment ? [
     { k: "上涨家数", v: sentiment.up, up: true },
     { k: "下跌家数", v: sentiment.down, up: false },
-    { k: "平盘", v: sentiment.flat, up: null },
-    { k: "涨停", v: sentiment.zt, up: true },
-    { k: "真实涨停", v: sentiment.zt_real, up: true },
-    { k: "跌停", v: sentiment.dt, up: false },
-    { k: "真实跌停", v: sentiment.dt_real, up: false },
-    { k: "活跃度", v: sentiment.active, up: null },
   ] : [];
 
   return (
@@ -281,7 +337,7 @@ export function DailyReview() {
             <div className="grid gap-3 sm:grid-cols-2">
               {[
                 { k: "大盘宽度", v: sentiment.breadth, hint: "冰点 / 偏弱 / 中性 / 偏强 / 普涨" },
-                { k: "题材投机", v: sentiment.speculation, hint: "冰点 / 普通 / 活跃 / 亢奋" },
+                { k: "涨跌比", v: `${(sentiment.up / Math.max(sentiment.down, 1)).toFixed(2)}`, hint: "上涨家数 / 下跌家数" },
               ].map((m) => (
                 <div key={m.k} className="rounded-lg bg-muted/25 p-4">
                   <p className="text-xs text-muted-foreground">{m.k}</p>
