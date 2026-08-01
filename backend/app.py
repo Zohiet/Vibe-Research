@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from contextlib import asynccontextmanager
 from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -24,6 +25,7 @@ import chat as chat_layer
 import cli_runtime
 import debate as debate_layer
 import gstock
+import logsetup
 import newsradar
 import portfolio as pf
 import market
@@ -35,7 +37,18 @@ import wikipush
 import wikiread
 import aisession
 
-app = FastAPI(title="Vibe-Research API", version="0.2.2")
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    """启动钩子。日志落盘（VR-GOAL-015）**必须在这里装，不能在模块顶层**：
+    uvicorn 在 import 完 app 之后才配置自己的 logging，顶层装的 handler 会被它覆盖掉。
+
+    用 lifespan 而不是 `@app.on_event("startup")`——后者在当前 FastAPI 上已废弃、会告警。
+    """
+    logsetup.setup()
+    yield
+
+
+app = FastAPI(title="Vibe-Research API", version="0.2.2", lifespan=_lifespan)
 
 # 每半小时后台刷新持仓数据
 pf.start_scheduler(1800)

@@ -235,19 +235,75 @@ def _stage_plan(rounds: int) -> list[str]:
     return ["bull", "bear", "referee"]
 
 
-def _build_messages(stage: str, facts: str, transcript: list[dict]) -> list[dict]:
-    """给某个角色拼消息。底稿始终在 system 里；已产生的发言作为上下文喂进去。"""
+def _is_timeout(e: BaseException) -> bool:
+    """这次失败是不是「跑满超时」。
+
+    **按类型判，不匹配错误文案**——文案早晚会改，匹配文案的判断会在那天静默失效。
+    `cli_runtime.CliTimeout` 就是为此新立的类型（VR-GOAL-015）。
+    """
+    import subprocess
+
+    if isinstance(e, (cli_runtime.CliTimeout, subprocess.TimeoutExpired, TimeoutError)):
+        return True
+    try:
+        import requests
+        if isinstance(e, requests.exceptions.Timeout):
+            return True
+    except Exception:  # noqa: BLE001 — requests 缺失时不影响判定
+        pass
+    return False
+
+
+def _retriable(e: BaseException, emitted: list[str]) -> bool:
+    """要不要重试这一次失败。两个条件缺一不可：
+
+    1. **不是超时。** 快速失败（如 `claude 退出码 1`，几秒就回来）重试几乎不花时间、
+       且很可能成功；而跑满 300s 的超时重试要再赔 300s，还大概率再超一次。
+       二轮辩论 5 个阶段 × 300s = 最坏 25 分钟，这条保证重试**不给最坏情况加时间**。
+    2. **一个字都还没吐出来。** 已经流出去的 delta 前端已经渲染在该角色的气泡里了；
+       重试会让第二遍的文本接在半截后面，看起来像模型精神分裂。要干净地重来，
+       得加一个「清空该阶段」的协议事件并改前端——那超出本 Goal 的范围。
+       实际上目标失败形态（CLI 一次性返回）失败时 `emitted` 必为空，这条不影响覆盖。
+    """
+    return not _is_timeout(e) and not emitted
+
+
+def _absent_note(absent: list[str]) -> str:
+    """缺席清单，措辞与底稿的「## 数据缺口」保持同一套习惯（VR-GOAL-015）。
+
+    **给的是所有后续角色，不只是主持人。** `bull_rebut` 的提示词第一句是
+    「上面是空方的质疑。逐条回应」——空方缺席时这句话是假的，模型会对着不存在的
+    质疑编造回应。污染从反驳轮就开始，主持人拿到的是「看起来完整的假发言」。
+    """
+    names = "、".join(_STAGE_LABEL[s] for s in absent)
+    return (f"## 本场缺席\n以下角色本轮未能发言（生成失败），其观点**不存在**：{names}。\n"
+            f"不得假装其已表达、不得替其立论、不得回应其并未提出的观点；"
+            f"涉及它的部分请直接说明该方本场缺席。")
+
+
+def _build_messages(stage: str, facts: str, transcript: list[dict],
+                    absent: list[str] | None = None) -> list[dict]:
+    """给某个角色拼消息。底稿始终在 system 里；已产生的发言作为上下文喂进去。
+
+    `absent` 是此前失败、没能发言的角色列表——它只进提示词，**不进 transcript**，
+    否则占位文本会以「【空方的发言】…」的形状出现，有被后续角色当论据引用的风险。
+    """
     system = f"{_ROLE_PROMPTS[stage]}\n\n{facts}"
     user_parts = []
     for t in transcript:
         if stage == "bull" or (stage == "bear" and t["stage"] != "bull"):
             continue  # 首轮陈述：多方不看任何人，空方只看多方
         user_parts.append(f"【{_STAGE_LABEL[t['stage']]}的发言】\n{t['content']}")
+    note = _absent_note(absent) if absent else ""
     if not user_parts:
+        user = "请基于底稿开始你的陈述。"
         return [{"role": "system", "content": system},
-                {"role": "user", "content": "请基于底稿开始你的陈述。"}]
+                {"role": "user", "content": f"{note}\n\n{user}" if note else user}]
+    body = "\n\n".join(user_parts)
+    if note:
+        body = f"{body}\n\n{note}"
     return [{"role": "system", "content": system},
-            {"role": "user", "content": "\n\n".join(user_parts) + "\n\n请按你的角色要求输出。"}]
+            {"role": "user", "content": body + "\n\n请按你的角色要求输出。"}]
 
 
 def run_debate_stream(cfg: dict, code: str, rounds: int = 1):
@@ -273,30 +329,47 @@ def run_debate_stream(cfg: dict, code: str, rounds: int = 1):
     facts = dossier_text(dossier)
     transcript: list[dict] = []
 
+    absent: list[str] = []
+
     for stage in _stage_plan(rounds):
         yield {"type": "stage", "stage": stage, "label": _STAGE_LABEL[stage]}
-        messages = _build_messages(stage, facts, transcript)
-        buf: list[str] = []
-        try:
-            if is_cli:
-                content = cli_runtime.run_cli(provider[4:], messages[0]["content"], messages[-1]["content"])
-                buf.append(content)
-                yield {"type": "delta", "stage": stage, "text": content}
-            else:
-                # _call_llm_stream 返回的是上游 Response，需配 _iter_sse_deltas 解析 SSE
-                resp = chat._call_llm_stream(cfg, messages, use_tools=False)
-                for delta in chat._iter_sse_deltas(resp):
-                    text = delta.get("content")
-                    if text:
-                        buf.append(text)
-                        yield {"type": "delta", "stage": stage, "text": text}
-        except Exception as e:  # noqa: BLE001 — 单个角色失败不该毁掉整场辩论
+        messages = _build_messages(stage, facts, transcript, absent)
+        err: Exception | None = None
+
+        # 最多试 2 次。**只有「一个字都还没吐出来」时才重试**——见 `_retriable`。
+        for attempt in (1, 2):
+            buf: list[str] = []
+            try:
+                if is_cli:
+                    content = cli_runtime.run_cli(provider[4:], messages[0]["content"], messages[-1]["content"])
+                    buf.append(content)
+                    yield {"type": "delta", "stage": stage, "text": content}
+                else:
+                    # _call_llm_stream 返回的是上游 Response，需配 _iter_sse_deltas 解析 SSE
+                    resp = chat._call_llm_stream(cfg, messages, use_tools=False)
+                    for delta in chat._iter_sse_deltas(resp):
+                        text = delta.get("content")
+                        if text:
+                            buf.append(text)
+                            yield {"type": "delta", "stage": stage, "text": text}
+                err = None
+                break
+            except Exception as e:  # noqa: BLE001 — 单个角色失败不该毁掉整场辩论
+                err = e
+                if attempt == 1 and _retriable(e, buf):
+                    yield {"type": "status", "stage": stage,
+                           "message": f"{_STAGE_LABEL[stage]}生成失败，正在重试一次…"}
+                    continue
+                break
+
+        if err is not None:
             # 必须补一个终态事件：前端按 stage_done 把该角色标记为完成，
             # 只发 error 的话这个角色会永远停在「生成中…」，并让「全部完成」判定不成立、
             # 连带后面能正常跑完的角色也存不进沉淀。
-            yield {"type": "error", "stage": stage, "message": f"{_STAGE_LABEL[stage]}生成失败：{e}"}
+            yield {"type": "error", "stage": stage, "message": f"{_STAGE_LABEL[stage]}生成失败：{err}"}
             yield {"type": "stage_done", "stage": stage, "label": _STAGE_LABEL[stage],
-                   "content": f"（本角色生成失败：{e}）", "failed": True}
+                   "content": f"（本角色生成失败：{err}）", "failed": True}
+            absent.append(stage)   # 后续角色会被明确告知这个人没发言
             continue  # 失败内容不进 transcript——不能把错误信息当论据喂给后面的角色
 
         content = "".join(buf).strip()

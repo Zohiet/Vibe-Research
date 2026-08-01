@@ -63,6 +63,15 @@ class CliUnavailable(RuntimeError):
     """本机未检测到对应 CLI（未安装 / 不在 PATH）。"""
 
 
+class CliTimeout(RuntimeError):
+    """子进程跑满 `_CLI_TIMEOUT_S` 仍未结束。
+
+    单独立一个类型，是为了让调用方**按类型**判断而不是去匹配错误文案
+    （VR-GOAL-015：辩论对快速失败重试、对超时不重试）。
+    文案早晚会改，匹配文案的判断会在改文案那天静默失效。
+    """
+
+
 def _find_bin(name: str) -> str | None:
     hit = shutil.which(name)
     if hit:
@@ -133,7 +142,7 @@ def run_cli(kind: str, system_prompt: str, user_prompt: str) -> str:
                 timeout=_CLI_TIMEOUT_S,
             )
         except subprocess.TimeoutExpired as e:
-            raise RuntimeError(f"{kind} 生成超时（>{_CLI_TIMEOUT_S}s）") from e
+            raise CliTimeout(f"{kind} 生成超时（>{_CLI_TIMEOUT_S}s）") from e
 
         out = (proc.stdout or "").strip()
         # 退出码非 0 一律报错：即使已经吐了半截 stdout，那也是失败的运行，
@@ -219,7 +228,7 @@ def run_cli_stream(kind: str, system_prompt: str, user_prompt: str):
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                raise RuntimeError(f"{kind} 生成超时（>{_CLI_TIMEOUT_S}s）")
+                raise CliTimeout(f"{kind} 生成超时（>{_CLI_TIMEOUT_S}s）")
             try:
                 line = q.get(timeout=min(remaining, 1.0))
             except queue.Empty:

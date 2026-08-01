@@ -12,6 +12,7 @@ import { SaveNoteButton } from "@/components/ui/SaveNoteButton";
 import { api, ApiError, type RadarData, type Industry, type Announcement, type NewsItem } from "@/lib/api";
 import { loadWatch } from "@/lib/watchlist";
 import { hasLlm, chatStream } from "@/lib/llm";
+import { isStale, parseStamp, staleLabel } from "@/lib/staleness";
 import { cn } from "@/lib/utils";
 
 const TABS = [
@@ -93,12 +94,19 @@ function InvestmentNewsPanel() {
   };
 
   const dg = cur ? digests[cur.key] : undefined;
+  const cacheAt = parseStamp(data?.generated_at);
+  const cacheStale = !!cacheAt && isStale(cacheAt);
 
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <span className="text-xs text-muted-foreground">
-          {hasData ? `${data!.stats.total_sources} 个公开源 · 近 ${data!.recent_days} 天 · 更新于 ${data!.generated_at}` : "12 赛道 · 108 个公开源"}
+        {/* 缓存不点「刷新」就永远是上次抓的。绝对时间戳一直都有，但「07-31 11:13」和
+            「今天 09:00」长得一模一样，要用户自己做减法——跨天就换成显眼的「N 天前」。 */}
+        <span className={cn("text-xs", cacheStale ? "text-warning" : "text-muted-foreground")}>
+          {hasData
+            ? `${data!.stats.total_sources} 个公开源 · 近 ${data!.recent_days} 天 · 更新于 ${cacheAt ? staleLabel(cacheAt) : data!.generated_at}`
+            : "12 赛道 · 108 个公开源"}
+          {cacheStale && " · 这是缓存，点右侧刷新取最新"}
         </span>
         <div className="flex items-center gap-2">
           {hasData && (

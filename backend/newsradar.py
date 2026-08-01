@@ -19,8 +19,15 @@ from datetime import datetime, timezone, timedelta
 from email.utils import parsedate_to_datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SOURCES_FILE = os.path.join(HERE, "news_sources.json")
-CACHE_DIR = os.path.join(HERE, ".cache")
+SOURCES_FILE = os.path.join(HERE, "news_sources.json")   # 源清单是仓库资产，不是用户数据
+
+# 缓存跟着 VR_DATA_DIR 走（VR-GOAL-015）。
+# ⚠️ 曾经写死在 `backend/.cache/` —— 那是**仓库内**，沙箱与真实实例共用同一份，
+# E2E 里点一次「刷新」就会改掉用户日常在看的数据，违反「用户数据都在 ~/.vibe-research/」红线。
+# 旧的 `backend/.cache/radar.json` **不做迁移**：它是抓来的派生数据，点一次刷新就回来；
+# `portfolio` / `myreports` 那套 `_migrate_legacy()` 是为「用户手写、丢了就没了」的东西准备的。
+_DATA_ROOT = os.environ.get("VR_DATA_DIR") or os.path.join(os.path.expanduser("~"), ".vibe-research")
+CACHE_DIR = os.path.join(_DATA_ROOT, "cache")
 CACHE_FILE = os.path.join(CACHE_DIR, "radar.json")
 
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
