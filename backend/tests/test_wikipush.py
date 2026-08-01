@@ -9,6 +9,7 @@
 import hashlib
 
 import myaccumulation as ma
+import wikidir
 import wikipush
 from fastapi.testclient import TestClient
 
@@ -40,7 +41,7 @@ def _list():
 
 # ── 验收项 1：没配 VR_WIKI_DIR 就不给投 ────────────────────────────────
 def test_disabled_when_unset(monkeypatch):
-    monkeypatch.setattr(wikipush, "WIKI_DIR", None)
+    monkeypatch.setattr(wikidir, "WIKI_DIR", None)
     _a_note()
     body = _list()
     assert body["wiki"] == {"enabled": False, "error": None}  # 未配置是正常态，不报错
@@ -48,7 +49,7 @@ def test_disabled_when_unset(monkeypatch):
 
 
 def test_push_rejected_when_unset(monkeypatch):
-    monkeypatch.setattr(wikipush, "WIKI_DIR", None)
+    monkeypatch.setattr(wikidir, "WIKI_DIR", None)
     note = _a_note()
     r = client.post(f"/api/myaccumulation/{note['id']}/push-wiki")
     assert r.status_code == 400
@@ -58,7 +59,7 @@ def test_push_rejected_when_unset(monkeypatch):
 # ── 验收项 2：投递后逐字节一致 ──────────────────────────────────────────
 def test_push_byte_identical(tmp_path, monkeypatch):
     root = _fake_wiki(tmp_path)
-    monkeypatch.setattr(wikipush, "WIKI_DIR", root)
+    monkeypatch.setattr(wikidir, "WIKI_DIR", root)
     note = _a_note()
 
     r = client.post(f"/api/myaccumulation/{note['id']}/push-wiki")
@@ -77,14 +78,14 @@ def test_push_byte_identical(tmp_path, monkeypatch):
 
 
 def test_push_twice_409(tmp_path, monkeypatch):
-    monkeypatch.setattr(wikipush, "WIKI_DIR", _fake_wiki(tmp_path))
+    monkeypatch.setattr(wikidir, "WIKI_DIR", _fake_wiki(tmp_path))
     note = _a_note()
     assert client.post(f"/api/myaccumulation/{note['id']}/push-wiki").status_code == 200
     assert client.post(f"/api/myaccumulation/{note['id']}/push-wiki").status_code == 409
 
 
 def test_push_unknown_id_404(tmp_path, monkeypatch):
-    monkeypatch.setattr(wikipush, "WIKI_DIR", _fake_wiki(tmp_path))
+    monkeypatch.setattr(wikidir, "WIKI_DIR", _fake_wiki(tmp_path))
     _a_note()
     assert client.post("/api/myaccumulation/deadbeef/push-wiki").status_code == 404
 
@@ -92,7 +93,7 @@ def test_push_unknown_id_404(tmp_path, monkeypatch):
 # ── 验收项 4：wiki 把文件移进 ingested/ 后，VR 仍认得出投过 ──────────────
 def test_pushed_after_move_to_ingested(tmp_path, monkeypatch):
     root = _fake_wiki(tmp_path)
-    monkeypatch.setattr(wikipush, "WIKI_DIR", root)
+    monkeypatch.setattr(wikidir, "WIKI_DIR", root)
     note = _a_note()
     client.post(f"/api/myaccumulation/{note['id']}/push-wiki")
 
@@ -110,7 +111,7 @@ def test_pushed_after_move_to_ingested(tmp_path, monkeypatch):
 # ── 验收项 5：wiki 侧删掉文件后可以重投（不记台账的直接好处）────────────
 def test_repushable_after_delete(tmp_path, monkeypatch):
     root = _fake_wiki(tmp_path)
-    monkeypatch.setattr(wikipush, "WIKI_DIR", root)
+    monkeypatch.setattr(wikidir, "WIKI_DIR", root)
     note = _a_note()
     client.post(f"/api/myaccumulation/{note['id']}/push-wiki")
 
@@ -127,7 +128,7 @@ def test_reject_non_wiki_dir(tmp_path, monkeypatch):
     plain.mkdir()
     (plain / "随便一个文件.txt").write_text("x", encoding="utf-8")
     before = sorted(p.name for p in plain.rglob("*"))
-    monkeypatch.setattr(wikipush, "WIKI_DIR", plain)
+    monkeypatch.setattr(wikidir, "WIKI_DIR", plain)
     note = _a_note()
 
     r = client.post(f"/api/myaccumulation/{note['id']}/push-wiki")
@@ -142,7 +143,7 @@ def test_reject_non_wiki_dir(tmp_path, monkeypatch):
 
 # ── 验收项 7：目录读不到时页面不崩 ──────────────────────────────────────
 def test_broken_dir_degrades(tmp_path, monkeypatch):
-    monkeypatch.setattr(wikipush, "WIKI_DIR", tmp_path / "盘没插" / "投资笔记")
+    monkeypatch.setattr(wikidir, "WIKI_DIR", tmp_path / "盘没插" / "投资笔记")
     _a_note()
 
     body = _list()  # 关键：列表接口照常 200，不能因为副功能坏了就打不开页面

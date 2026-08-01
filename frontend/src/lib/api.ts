@@ -45,6 +45,21 @@ export interface Note {
 
 // 列表出参把页面级的 wiki 状态**套在 data 里面**：request() 会 `payload?.data ?? payload`，
 // 与 data 平级的兄弟字段会被静默丢掉。
+// wiki 研究页摘要（VR-GOAL-013）。data=null 表示 wiki 里没有这只股票——界面什么都不显示。
+export interface WikiStockSummary {
+  title: string; market: string; sector: string; updated: string; sources: string;
+  oneliner: string; sections: string[];
+  /** 全文字符数，用来在勾选文案上标体积——代价每轮重发，得让它可见 */
+  chars: number;
+  path: string;
+}
+export interface WikiStock {
+  enabled: boolean;
+  /** 「没配」是 null（静默）；「配了但读不到」有原因（必须让用户看见）*/
+  error: string | null;
+  data: WikiStockSummary | null;
+}
+
 export interface AccumulationList {
   notes: Note[];
   wiki: { enabled: boolean; error: string | null };
@@ -303,6 +318,9 @@ export const api = {
   uploadReport: (name: string, contentB64: string) =>
     request<MyReport>("/myreports", "POST", { name, content_b64: contentB64 }),
   deleteReport: (id: string) => request<{ ok: boolean }>(`/myreports/${id}`, "DELETE"),
+  // 从 wiki 只读该股票的研究页（VR-GOAL-013）。VR 侧全程只读，绝不写 wiki。
+  wikiStock: (code: string) => get<WikiStock>(`/wiki/stock/${code}`),
+  wikiStockFull: (code: string) => get<{ text: string }>(`/wiki/stock/${code}/full`),
   // AI 会话内存（VR-GOAL-010）：只在后端进程内存里，**绝不落盘**，后端一停就没。
   aiSessionGet: <T>(key: string) => get<{ data: T | null; ts: number | null }>(`/aisession/${encodeURIComponent(key)}`),
   aiSessionPut: (key: string, data: unknown) =>

@@ -6,6 +6,7 @@
 只有一个通配符的距离，必须有硬断言。
 """
 import portfolio as pf
+import wikidir
 import wikipush
 from fastapi.testclient import TestClient
 
@@ -78,7 +79,7 @@ def test_render_has_no_wikilink():
 # ── 验收项 4 + 5：收件箱最多一份，且不误删别的 ────────────────────────
 def test_push_keeps_only_latest_and_touches_nothing_else(tmp_path, monkeypatch):
     root = _fake_wiki(tmp_path)
-    monkeypatch.setattr(wikipush, "WIKI_DIR", root)
+    monkeypatch.setattr(wikidir, "WIKI_DIR", root)
     vr = root / "raw" / "vr"
     vr.mkdir(parents=True)
     ingested = vr / "ingested"
@@ -109,13 +110,13 @@ def test_push_same_day_twice_overwrites():
 
 # ── 验收项 1：未配置就不给投 ──────────────────────────────────────────
 def test_disabled_when_unset(monkeypatch):
-    monkeypatch.setattr(wikipush, "WIKI_DIR", None)
+    monkeypatch.setattr(wikidir, "WIKI_DIR", None)
     d = client.get("/api/portfolio").json()["data"]
     assert d["can_push"] is False
 
 
 def test_push_rejected_when_unset(monkeypatch):
-    monkeypatch.setattr(wikipush, "WIKI_DIR", None)
+    monkeypatch.setattr(wikidir, "WIKI_DIR", None)
     pf.add_holding("600519", 100, 1500)
     r = client.post("/api/portfolio/push-wiki")
     assert r.status_code == 400
@@ -127,7 +128,7 @@ def test_push_rejected_when_unset(monkeypatch):
 def test_reject_non_wiki_dir(tmp_path, monkeypatch):
     plain = tmp_path / "not-a-wiki"
     plain.mkdir()
-    monkeypatch.setattr(wikipush, "WIKI_DIR", plain)
+    monkeypatch.setattr(wikidir, "WIKI_DIR", plain)
     pf.add_holding("600519", 100, 1500)
     r = client.post("/api/portfolio/push-wiki")
     assert r.status_code == 400
@@ -137,7 +138,7 @@ def test_reject_non_wiki_dir(tmp_path, monkeypatch):
 
 
 def test_empty_portfolio_400(tmp_path, monkeypatch):
-    monkeypatch.setattr(wikipush, "WIKI_DIR", _fake_wiki(tmp_path))
+    monkeypatch.setattr(wikidir, "WIKI_DIR", _fake_wiki(tmp_path))
     for h in list(pf.get_portfolio()["holdings"]):
         pf.remove_holding(h["code"])
     r = client.post("/api/portfolio/push-wiki")
@@ -149,7 +150,7 @@ def test_empty_portfolio_400(tmp_path, monkeypatch):
 def test_all_portfolio_endpoints_carry_can_push(tmp_path, monkeypatch):
     """实测踩过：只给 GET 加了 can_push，前端建完仓拿 POST 的返回值刷新状态，
     按钮就在"刚建完仓"这条路径上凭空消失。"""
-    monkeypatch.setattr(wikipush, "WIKI_DIR", _fake_wiki(tmp_path))
+    monkeypatch.setattr(wikidir, "WIKI_DIR", _fake_wiki(tmp_path))
     for h in list(pf.get_portfolio()["holdings"]):
         pf.remove_holding(h["code"])
 

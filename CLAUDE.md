@@ -133,6 +133,25 @@ E2E 用沙箱的 `.sandbox-data/fake-wiki`（`ci.ps1` / `dev.ps1 -Sandbox` 自�
   实测兑现过一次——华虹宏力的平仓价和日期就是从流水里来的。
 - 行情全部拉取失败时**拒绝投递**（全 0 的快照投进 wiki 就是污染）。
 
+### 从 wiki 只读该股票的研究页（`wikiread.py`，VR-GOAL-013）
+
+个股数据页显示「你的 wiki 研究页」摘要卡（更新日期 / 板块 / 一句话定位 / 写过哪些节），
+问 AI 面板多一个可选的「带上 wiki 研究页（约 N 字）」——勾了才把全文拼进 `context`。
+
+- **读写物理分开**：`wikipush.py` 只写 `raw/vr/`，`wikiread.py` **全模块没有任何写操作**。
+  用户的公司页是几个月积累的判断、写坏了没有第二份，
+  「只读」在这里是**结构**不是纪律，且有 `test_reading_never_writes` 的目录指纹断言盯着。
+- **目录定位与校验在 `wikidir.py`**（读写共用，只有一处真相源）。
+  ⚠️ **引用方必须 `import wikidir` 而非 `from wikidir import WIKI_DIR`**——
+  否则测试里的 `monkeypatch.setattr(wikidir, "WIKI_DIR", …)` 改的是原件、被测代码读的是副本，
+  **测试会绿着通过但什么都没验**。VR-GOAL-013 做过变红实验证明这个陷阱（15 处 patch 全部 AttributeError）。
+- **不缓存**：扫 39 页 frontmatter 实测 2.4ms。加 TTL 省不下什么，
+  却会让"在 Obsidian 改完切回 VR 却没变"——别照抄 `market.py` 的缓存，那里是网络请求。
+- **只认 frontmatter 的 `ticker`**（实测 39/39 覆盖），不解析文件名的全角括号。
+  递归扫 `wiki/entities/`，不写死子目录——wiki 的目录结构会变（`holdings/` 就被废过）。
+- **摘要只取不需要理解语义的三样**：frontmatter 键值对、`> **一句话定位：**` 那一行、`^## ` 节标题。
+  **刻意不取"最近一节估值快照"**——那要从节标题解析日期，等于让 VR 认识 wiki 的书写约定。
+
 ### AI 会话内存（`aisession.py`，VR-GOAL-010）
 
 各页 AI 产出（问 AI 对话 / 每日复盘 / 资讯提炼 / 多空辩论 / 反思审计）存在**后端进程内存**里：

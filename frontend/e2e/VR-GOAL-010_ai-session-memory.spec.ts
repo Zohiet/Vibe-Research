@@ -1,5 +1,5 @@
-import { test, expect, type Page } from "@playwright/test";
-import { assertSandbox, watchConsole, shot } from "./_helpers";
+import { test, expect } from "@playwright/test";
+import { assertSandbox, watchConsole, shot, fakeLlmConfigured } from "./_helpers";
 
 // VR-GOAL-010 验收项 1 / 2 / 6 / 7：AI 会话存在后端进程内存里，
 // 切页往返、刷新都还在；能清空；恢复出来的内容标着生成时间。
@@ -14,16 +14,6 @@ import { assertSandbox, watchConsole, shot } from "./_helpers";
 const GOAL = "VR-GOAL-010_ai-session-memory";
 const KEY = "portfolio";
 const OPEN = "让 AI 看我的持仓";
-
-// 面板只在「已接入 AI」时显示对话（否则是引导去设置的界面）。
-// 塞一份**假配置**让它认为已接入：全程不发消息，所以不会真的打任何模型接口。
-async function fakeLlmConfigured(page: Page) {
-  await page.addInitScript(() => {
-    localStorage.setItem("vr-llm", JSON.stringify({
-      provider: "openai", baseURL: "http://127.0.0.1:1/v1", apiKey: "e2e-fake", model: "e2e-model",
-    }));
-  });
-}
 
 // 面板是 fixed 全屏遮罩，开着的时候点不到侧边栏（实测：backdrop intercepts pointer events）。
 // 切页之前必须先关掉——点遮罩本身就会触发 close()。
