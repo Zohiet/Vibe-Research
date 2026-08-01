@@ -72,12 +72,10 @@ test("个股页显示 wiki 研究页摘要，且问 AI 能带上全文", async (
   await expect(page.getByText(/带上 wiki 研究页（约 [\d.]+k 字）/)).toBeVisible();
   await shot(page, "VR-GOAL-013_wiki-read-in-vr", "02_勾选项标出体积");
 
-  // ⚠️ 放过 502：/api/news 的上游数据源目前是坏的（沙箱与真实实例都复现，
-  // 报 "新闻源异常：Expecting value: line 1 column 1"），**与本 Goal 无关的既有故障**。
-  // 只在本 spec 放过——个股页是唯一会打 /api/news 的页面；
-  // 而本 Goal 的 wiki 端点从不返回 502（它降级成 200 + enabled=false，或 400/404），
-  // 所以这条豁免不会掩盖本 Goal 自己的问题。
-  console_.check(["502"]);
+  // 曾经在这里放过 502：`/api/news` 当时对每个代码都失败（"新闻源异常：Expecting value…"）。
+  // 根因已由 VR-GOAL-016 修掉（akshare 内部裸 requests 不带 UA），豁免随之撤销——
+  // 本仓库不留「这条不用管」的例外。
+  console_.check();
 });
 
 test("wiki 里没有的股票：什么都不显示，不出现「暂无」文案", async ({ page }) => {

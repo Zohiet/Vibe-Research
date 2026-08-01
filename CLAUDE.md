@@ -20,6 +20,9 @@ Vibe-Research：开源的「个人 AI 投研看板」，主 A 股、兼看美股
 | [`docs/harness/goal_workflow.md`](docs/harness/goal_workflow.md) | **三档怎么判、两道人工闸门、`goal/*` 分支与 `--no-ff` 合并、验收证据形态** |
 | [`docs/harness/agent_workflow.md`](docs/harness/agent_workflow.md) | **提交前缀口径、合并记录模板、agent 边界（哪些动作必须先问）、快通道** |
 
+待办与已完成的 Goal 一览：[`docs/harness/goal_backlog.md`](docs/harness/goal_backlog.md)
+——**它是流水账不是真相源**，每条具体做什么只看 `docs/goals/` 里那份。
+
 一句话概括：开发单位是 `VR-GOAL-XXX_<slug>`；按改动性质分**豁免 / 轻量 / 完整**三档；完整档要过**两道人工闸门**（第一道是**一轮拷打 `/mattpocock-skills:grilling`**、不是点头确认，第二道是 Plan 确认），且**代码写完不算完成**——要有证据、要写验收报告才能发布到 `main`。
 
 git 命令的执行细节、冲突高发位置、Windows 坑见用户级 skill **`VR-git`**。
@@ -48,7 +51,7 @@ python -m pytest tests/test_myaccumulation.py -q  # 单文件
 python -m pytest tests/test_pure.py::test_get_prefix -q   # 单个用例
 ```
 
-⚠️ **应当全绿（86 passed），没有已知失败、没有豁免白名单。** 任何一条挂了都要修——不要往 `ci.ps1` 或文档里加「这条不用管」的例外。（本仓库曾养过一条 Windows 专属失败，代价是同一句解释散在五处文档里；根因修掉后不再引入这类豁免。）
+⚠️ **应当全绿（当前 156 passed），没有已知失败、没有豁免白名单。** 任何一条挂了都要修——不要往 `ci.ps1` 或文档里加「这条不用管」的例外。（本仓库曾养过一条 Windows 专属失败，代价是同一句解释散在五处文档里；根因修掉后不再引入这类豁免。）
 
 前端构建 / 类型检查（仓库无 ESLint / Prettier 配置，`tsc -b` 就是类型闸门）：
 

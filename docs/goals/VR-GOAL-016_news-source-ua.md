@@ -129,3 +129,60 @@ data_json = json.loads(data_text.strip("jQuery3510875346244069884_1668256937995(
 
 - [x] 新闻是客观公开信息，不含评级/建议
 - [x] 不涉及用户私有数据
+
+---
+
+# 验收判定（2026-08-01）
+
+> 轻量档，按 `goal_workflow.md`「完成定义」写在本文件内。
+> **判定不由实现者下**——下面只摆证据、如实标出未达成项。
+
+## 逐条
+
+| # | 验收项 | 结果 | 证据 |
+|---|---|---|---|
+| 1 | 新闻能取到 | ✅ | `astock.stock_news("600519")` 返回 3/15 条，含真实标题与时间 |
+| 2 | 基本面能取到 | ⚠️ **未验** | push2 当前被风控，见下「未达成项」 |
+| 3 | 键名契约未变 | ✅ | `test_news_keys_contract` / `test_info_keys_contract`，六键与九键逐字比对 |
+| 4 | 三处都走 `em_get` | ✅ | `test_all_three_call_sites_use_em_get` + 两条静态扫描测试。**实际是四处**（见下） |
+| 5 | 护栏真的有效 | ✅ | 变红实验：种入 `ak.stock_news_em(` 与裸 `requests.get(…eastmoney…)` 各一处 → `2 failed`；撤掉 → `12 passed` |
+| 6 | 不依赖硬编码回调名 | ✅ | `test_news_callback_name_is_ours` 断言 `cb == "vrcb"` 由本方指定 |
+| 7 | 上游返回空不炸 | ✅ | `test_news_empty_upstream_returns_empty`，空 body → `[]` |
+| 8 | 辩论底稿不再缺新闻 | ✅ | `tools.exec_tool("query_news", …)` 返回 15 条 → 不进 `missing` |
+| 9 | 页面上看得见 | ✅ | `docs/screenshots/VR-GOAL-016_news-source-ua/01_个股页个股新闻.jpg`，10 条带链接新闻，已肉眼确认非白屏 |
+| 10 | 没弄坏别的 | ✅ | `./ci.ps1` 156 passed；`./ci.ps1 -E2E` 13/13 passed |
+
+## 与 Spec 的偏差
+
+**范围从三处变成四处。** 新增的静态护栏刚建好就抓出第四处：`hot_concepts` 用裸
+`requests.post` 打 `emappdata.eastmoney.com`，而 `em_get` 只做 GET。
+
+处理方式是抽出 `_em_request(method, …)` 让 `em_get` / `em_post` 共享限流队列与
+直连/代理探测结果，**`em_get` 的 GET 行为逐字未变**。这超出了拷打时批准的「三处」，
+但正是那条决策的本意（同一根因的所有出口一起修）——已当场向负责人说明。
+
+**顺带撤掉一条豁免**：`e2e/VR-GOAL-013_wiki-read-in-vr.spec.ts` 里为这个 bug 加过
+`console_.check(["502"])`。根因既已修掉，豁免同时撤销（本仓库不留「这条不用管」的例外），
+撤后该 spec 2/2 仍绿。
+
+## 未达成项 ⚠️
+
+**验收项 2（`/api/info` 能取到基本面）本次无法验证。** `push2.eastmoney.com` 当前对本机
+IP 处于风控状态，2026-08-01 多次尝试全部 `RemoteDisconnected`。
+
+**已做对照证明这不是本次改动引入的**：同一时刻**老路径 `ak.stock_individual_info_em`
+同样失败**，且同域名的 `emappdata`（热门概念 8 条）与 `np-anotice`（公告 3 条）正常
+——坏的是 `push2` 这一个域名，不是代码。该间歇性风控在 `a-stock-data/SKILL.md:41` 有记录。
+
+`individual_info` 的失败行为与改动前一致（抛异常 → `/api/info` 502；
+AI 工具那条路走 `_company_info` 的腾讯行情降级）。**待 push2 恢复后补验一次。**
+
+## 复核要点（三十秒版）
+
+1. **验收项 2 未验**，原因是上游被风控、非代码问题，已有对照；需要 push2 恢复后补一次。
+2. **范围从三处扩到四处**（新增 `em_post`），改的是 `astock.py` 最敏感的那个函数——
+   虽然 GET 路径逐字未变，diff 值得看一眼。
+3. **新引入一道会拦未来代码的闸**：以后想用 akshare 的 `*_em` 接口会被测试拒绝，
+   必须自己走 `em_get` 实现。这个成本拷打时已明确接受。
+4. 个股页因这两个调用进入限流队列而 **+2~3 秒**（已有 12~16 秒基础上）。
+   限流本身才是瓶颈，已记入 backlog，本 Goal 刻意不动。
