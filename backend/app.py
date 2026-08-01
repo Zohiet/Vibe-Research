@@ -689,24 +689,20 @@ def reports(code: str = Query(...), pages: int = Query(2, ge=1, le=5)):
 
 @app.get("/api/news")
 def news(code: str = Query(...), limit: int = Query(20, ge=1, le=50)):
-    """个股新闻（东财，需 akshare）。"""
+    """个股新闻（东财搜索，走 em_get，无需 akshare —— VR-GOAL-016）。"""
     code = _validate(code)
     try:
         return {"data": astock.stock_news(code, limit=limit)}
-    except astock.DependencyMissing as e:
-        raise HTTPException(501, str(e)) from e
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"新闻源异常：{e}") from e
 
 
 @app.get("/api/info")
 def info(code: str = Query(...)):
-    """个股基本面：行业/股本/上市时间（需 akshare）。"""
+    """个股基本面：行业/股本/上市时间（东财 push2，走 em_get，无需 akshare —— VR-GOAL-016）。"""
     code = _validate(code)
     try:
         return {"data": astock.individual_info(code)}
-    except astock.DependencyMissing as e:
-        raise HTTPException(501, str(e)) from e
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"基本面源异常：{e}") from e
 

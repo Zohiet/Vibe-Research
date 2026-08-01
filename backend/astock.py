@@ -2,9 +2,12 @@
 
 分级依赖：
   - 行情（腾讯）        : 仅需标准库 urllib —— 永远可用
-  - 研报（东财）+ PDF   : 仅需 requests —— 轻量必装
-  - 一致预期/新闻/公告  : akshare（惰性导入，缺失时优雅报错）
+  - 东财全线（研报 / 新闻 / 基本面 / 公告 / 数据中心）: 仅需 requests，**一律走 `em_get` / `em_post`**
+  - 一致预期 / 估值 / 巨潮公告 : akshare（惰性导入，缺失时优雅报错）—— 均非东财源
   - K线/财务/F10        : mootdx（惰性导入，缺失时优雅报错）
+
+⚠️ 东财请求**不得**绕过 `em_get` / `em_post`（含「委托给 akshare 的 `*_em` 接口」这种间接绕过）。
+   有 `tests/test_em_get_discipline.py` 静态拦截，理由见该文件与 VR-GOAL-016。
 
 合规：本模块只按用户传入的代码返回客观数据，不预置任何标的、不排名、不建议。
 """
@@ -200,20 +203,83 @@ def profit_forecast(code: str) -> list[dict]:
     return df.to_dict("records") if df is not None and not df.empty else []
 
 
+_EM_TAG_RE = re.compile(r"</?em>")
+
+
+def _strip_em(s) -> str:
+    """东财搜索会把命中词包成 <em>…</em>，去掉标签（含 akshare 那种 `(<em>…</em>)` 形式）。"""
+    return _EM_TAG_RE.sub("", str(s or "")).replace("()", "")
+
+
 def stock_news(code: str, limit: int = 20) -> list[dict]:
-    """个股新闻（东财）。"""
-    ak = _akshare()
-    df = ak.stock_news_em(symbol=code)
-    return df.head(limit).to_dict("records") if df is not None and not df.empty else []
+    """个股新闻（东财搜索接口，走 em_get）。
+
+    ⚠️ 曾经委托给 `ak.stock_news_em`，而它内部是**裸 requests.get、不带 UA**——
+    东财对无 UA 的请求返回「HTTP 200 + 空 body」，`json.loads("")` 直接炸，
+    表现为 `/api/news` 对每一个代码都 502（VR-GOAL-016）。
+
+    返回的**六个中文键是对外契约**（`api.ts` / `StockData.tsx` / `Intel.tsx` / `tools.py`
+    四处在读），改键名 = git 不报的语义冲突，有 `test_news_keys_contract` 盯着。
+    """
+    import json
+
+    param = {
+        "uid": "", "keyword": code, "type": ["cmsArticleWebOld"],
+        "client": "web", "clientType": "web", "clientVersion": "curr",
+        "param": {"cmsArticleWebOld": {
+            "searchScope": "default", "sort": "default",
+            "pageIndex": 1, "pageSize": max(limit, 20),
+            "preTag": "<em>", "postTag": "</em>",
+        }},
+    }
+    # 回调名由本方指定：akshare 硬编码了上游某次的长回调名，上游一改就崩。
+    # `cb` 是必需参数（不给直接 HTTP 400），所以只能 JSONP，但名字可以是我们自己的。
+    cb = "vrcb"
+    r = em_get("https://search-api-web.eastmoney.com/search/jsonp",
+               {"cb": cb, "param": json.dumps(param), "_": "1"})
+    text = (r.text or "").strip()
+    if not text.startswith(cb + "(") or not text.endswith(")"):
+        return []
+    data = json.loads(text[len(cb) + 1:-1])
+    result = data.get("result") or {}
+    arts = result.get("cmsArticleWebOld") or result.get("cmsArticle") or []
+    out = []
+    for a in arts[:limit]:
+        art = a.get("code", "")
+        out.append({
+            "关键词": code,
+            "新闻标题": _strip_em(a.get("title")),
+            "新闻内容": _strip_em(a.get("content")).replace("　", "").replace("\r\n", " "),
+            "发布时间": str(a.get("date") or ""),
+            "文章来源": str(a.get("mediaName") or ""),
+            "新闻链接": a.get("url") or (f"http://finance.eastmoney.com/a/{art}.html" if art else ""),
+        })
+    return out
+
+
+# push2 的 f 字段 → 中文键。**九个键是对外契约**（`/api/info` 与 AI 工具直接透传），
+# 与原先 akshare `stock_individual_info_em` 逐字一致，有 `test_info_keys_contract` 盯着。
+_INFO_FIELDS = {
+    "f57": "股票代码", "f58": "股票简称", "f84": "总股本", "f85": "流通股",
+    "f127": "行业", "f116": "总市值", "f117": "流通市值", "f189": "上市时间",
+    "f43": "最新",
+}
 
 
 def individual_info(code: str) -> dict:
-    """个股基本面（东财）：行业 / 总股本 / 上市时间等。"""
-    ak = _akshare()
-    df = ak.stock_individual_info_em(symbol=code)
-    if df is None or df.empty:
-        return {}
-    return {str(row["item"]): row["value"] for _, row in df.iterrows()}
+    """个股基本面（东财 push2，走 em_get）：行业 / 总股本 / 上市时间等。
+
+    ⚠️ 曾经委托给 `ak.stock_individual_info_em`——同样是裸 requests，**没有直连/代理降级**。
+    2026-08-01 实测：裸请求打 push2 三连 `ConnectionError`，而同一时刻 `em_get` 成功
+    （救回它的是代理降级，不是 UA——push2 上带不带 UA 都一样）。
+
+    只请求实际用到的 9 个字段（akshare 请求了 100 多个）。
+    """
+    secid = f"{'1' if code.startswith('6') else '0'}.{code}"
+    r = em_get("https://push2.eastmoney.com/api/qt/stock/get",
+               {"fltt": "2", "invt": "2", "fields": ",".join(_INFO_FIELDS), "secid": secid})
+    data = (r.json() or {}).get("data") or {}
+    return {name: data[f] for f, name in _INFO_FIELDS.items() if data.get(f) is not None}
 
 
 def disclosure(code: str) -> list[dict]:
@@ -225,14 +291,16 @@ def disclosure(code: str) -> list[dict]:
 
 
 def announcements(code: str, limit: int = 15) -> list[dict]:
-    """个股近期公告（东财公开接口，仅 requests，稳定）。返回 日期/标题/类型/详情链接。"""
-    import requests
+    """个股近期公告（东财公开接口，走 em_get）。返回 日期/标题/类型/详情链接。
 
-    r = requests.get(
+    ⚠️ 曾经是本模块自己写的裸 `requests.get`：有 UA，但**没有限流、没有代理降级**
+    ——同一条硬约定的第三处违反（VR-GOAL-016）。
+    """
+    r = em_get(
         "https://np-anotice-stock.eastmoney.com/api/security/ann",
-        params={"sr": -1, "page_size": limit, "page_index": 1, "ann_type": "A",
-                "client_source": "web", "stock_list": code, "f_node": 0, "s_node": 0},
-        headers={"User-Agent": UA}, timeout=20,
+        {"sr": -1, "page_size": limit, "page_index": 1, "ann_type": "A",
+         "client_source": "web", "stock_list": code, "f_node": 0, "s_node": 0},
+        timeout=20,
     )
     lst = (r.json().get("data") or {}).get("list") or []
     out = []
@@ -464,30 +532,51 @@ def _em_session(direct: bool):
     return s
 
 
+def _em_request(method: str, url: str, params: dict | None = None,
+                headers: dict | None = None, timeout: int = 15, **kw):
+    """`em_get` / `em_post` 的共同实现：**同一条限流队列、同一份直连/代理探测结果**。
+
+    抽出来是为了让 POST 也能享受这三样（VR-GOAL-016 的护栏抓出 `hot_concepts` 是
+    第四处绕过者，而它是 POST）。GET 的行为与抽取前逐字一致。
+    """
+    wait = _EM_MIN_INTERVAL - (time.time() - _em_last_call[0])
+    if wait > 0:
+        time.sleep(wait + random.uniform(0.1, 0.5))
+
+    def _call(direct: bool, t: int):
+        return getattr(_em_session(direct), method)(
+            url, params=params, headers=headers, timeout=t, **kw)
+
+    try:
+        mode = _em_mode[0]
+        if mode != "auto":
+            return _call(mode == "direct", timeout)
+        # auto：先直连，成功固定 direct；直连失败再走系统代理、成功固定 proxy。
+        try:
+            r = _call(True, min(timeout, 8))
+            _em_mode[0] = "direct"
+            return r
+        except Exception:
+            r = _call(False, timeout)
+            _em_mode[0] = "proxy"
+            return r
+    finally:
+        _em_last_call[0] = time.time()
+
+
 def em_get(url: str, params: dict | None = None, headers: dict | None = None, timeout: int = 15):
     """东财统一请求入口：串行限流 + **直连优先、失败降级系统代理**（避免科学上网代理挂掉国内站）。
 
     第一次请求探测：先直连（短超时、不重试），成功即固定走直连；失败则降级走系统代理并固定。
     探测结果整个进程复用，避免每次重试。`VR_DATA_PROXY=1` 可跳过探测、强制走代理。
     """
-    wait = _EM_MIN_INTERVAL - (time.time() - _em_last_call[0])
-    if wait > 0:
-        time.sleep(wait + random.uniform(0.1, 0.5))
-    try:
-        mode = _em_mode[0]
-        if mode != "auto":
-            return _em_session(mode == "direct").get(url, params=params, headers=headers, timeout=timeout)
-        # auto：先直连，成功固定 direct；直连失败再走系统代理、成功固定 proxy。
-        try:
-            r = _em_session(True).get(url, params=params, headers=headers, timeout=min(timeout, 8))
-            _em_mode[0] = "direct"
-            return r
-        except Exception:
-            r = _em_session(False).get(url, params=params, headers=headers, timeout=timeout)
-            _em_mode[0] = "proxy"
-            return r
-    finally:
-        _em_last_call[0] = time.time()
+    return _em_request("get", url, params, headers, timeout)
+
+
+def em_post(url: str, params: dict | None = None, headers: dict | None = None,
+            timeout: int = 15, json=None, data=None):
+    """东财 POST 入口。与 `em_get` 共用限流队列与直连/代理探测结果，语义完全一致。"""
+    return _em_request("post", url, params, headers, timeout, json=json, data=data)
 
 
 # ---------------------------------------------------------------------------
@@ -750,15 +839,16 @@ def concept_blocks(code: str) -> dict:
 
 
 def hot_concepts(code: str) -> list[dict]:
-    """个股当下被市场归到哪些概念在炒（东财热门概念命中，按热度降序）。"""
-    import requests
+    """个股当下被市场归到哪些概念在炒（东财热门概念命中，按热度降序，走 em_post）。
 
+    ⚠️ 曾经是裸 `requests.post`——绕过 `em_get` 的第四处，由 VR-GOAL-016 的护栏抓出。
+    """
     try:
         prefix = "SH" if code.startswith("6") else "SZ"
-        r = requests.post(
+        r = em_post(
             "https://emappdata.eastmoney.com/stockrank/getHotStockRankList",
-            json={"appId": "appId01", "globalId": "786e4c21-70dc-435a-93bb-38", "srcSecurityCode": prefix + code},
-            headers={"User-Agent": UA}, timeout=10)
+            json={"appId": "appId01", "globalId": "786e4c21-70dc-435a-93bb-38",
+                  "srcSecurityCode": prefix + code}, timeout=10)
         data = r.json().get("data") or []
     except Exception:
         return []
