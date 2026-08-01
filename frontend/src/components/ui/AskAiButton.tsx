@@ -82,7 +82,13 @@ export function AskAiButton({ context, sessionKey, extraContext, suggestions = [
   useEffect(() => () => abortRef.current?.abort(), []); // 组件卸载兜底
 
   // 会话内存（VR-GOAL-010）：mount 就拉，不等打开面板——否则打开时会先闪一下空白。
-  const session = useAiSession<Msg[]>(sessionKey);
+  // ⚠️ 内部加 `chat:` 前缀，**不要直接用 sessionKey**。
+  // 页面上除了这个对话，还可能有自己的 useAiSession（每日复盘页就有：
+  // 它用 "daily-review" 存复盘正文，而这里曾用同一个 key 存 Msg[]）——
+  // 同一个 key 两种形状，谁后写谁赢，复盘页拿到数组喂给 ReactMarkdown 直接崩。
+  // 前缀让「对话」和「页面自己的东西」在命名空间上永不相交，
+  // 而不是靠每个页面自觉去起不重名的 key。
+  const session = useAiSession<Msg[]>(`chat:${sessionKey}`, Array.isArray);
   useEffect(() => {
     if (!session.loaded) return;
     // 必须写 `?? []` 而不是「有才设」：换股票时 key 变、新 key 没有存档，

@@ -31,7 +31,7 @@ export function Notes() {
   const [reflecting, setReflecting] = useState(false);
   // 反思结果存后端进程内存（VR-GOAL-010）。整份 Record 存一个 key——
   // 若按 reflect:<noteId> 分开存，进页面时没人知道该拉哪些 id，等于永远恢复不出来。
-  const reflectSession = useAiSession<Record<string, string>>("reflect");
+  const reflectSession = useAiSession<Record<string, string>>("reflect", (v) => typeof v === "object" && !Array.isArray(v));
   const [reflectSaved, setReflectSaved] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   // 投递进 wiki（VR-GOAL-009）：wikiErr 是「配了但目录读不到」的原因；

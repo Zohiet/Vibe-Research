@@ -30,7 +30,7 @@ function InvestmentNewsPanel() {
   const [refreshing, setRefreshing] = useState(false);
   // 提炼要点存后端进程内存（VR-GOAL-010）。整份 Record 存一个 key，
   // 不按赛道各存一个——100 个 key 的配额要留给真正独立的会话（个股/板块）。
-  const digestSession = useAiSession<Record<string, { text: string }>>("intel");
+  const digestSession = useAiSession<Record<string, { text: string }>>("intel", (v) => typeof v === "object" && !Array.isArray(v));
   const [digests, setDigests] = useState<Record<string, Digest>>({});
   const [bulk, setBulk] = useState<{ running: boolean; done: number; total: number }>({ running: false, done: 0, total: 0 });
 

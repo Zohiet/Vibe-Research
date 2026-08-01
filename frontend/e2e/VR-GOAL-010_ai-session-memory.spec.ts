@@ -12,7 +12,10 @@ import { assertSandbox, watchConsole, shot, fakeLlmConfigured } from "./_helpers
 // AI 输出质量本来也不是这个 Goal 的判据。
 
 const GOAL = "VR-GOAL-010_ai-session-memory";
-const KEY = "portfolio";
+// 对话会话在后端的真实 key 带 `chat:` 前缀（AskAiButton 内部加的，
+// 防止和页面自己的 useAiSession 撞——见本文件末尾那条回归用例）。
+// URL 里要转义成 %3A。
+const KEY = "chat%3Aportfolio";
 const OPEN = "让 AI 看我的持仓";
 
 // 面板是 fixed 全屏遮罩，开着的时候点不到侧边栏（实测：backdrop intercepts pointer events）。
@@ -93,4 +96,61 @@ test("跨天的会话标成「昨天」并提示可能过期", async ({ page }) 
 
   // 留干净：这条会话是本用例造的，跑完删掉，免得污染下一次
   await page.request.delete(`/api/aisession/${KEY}`);
+});
+
+// ── 回归：页面级会话与对话会话不能撞 key ──────────────────────────────
+//
+// 真实事故（2026-08-01）：每日复盘页用 "daily-review" 存复盘正文（字符串），
+// 而同一页的 AskAiButton 也用 "daily-review" 存对话（Msg[]）。谁后写谁赢——
+// 对话一存，复盘页拿到数组喂给 ReactMarkdown，整页崩：
+// 「Unexpected value `[object Object],[object Object]` for `children` prop」。
+//
+// 这个 bug 通过了 VR-GOAL-010 的全部九条验收项，说明当时**缺的就是这条测试**。
+// 修法是 AskAiButton 内部给 key 加 `chat:` 前缀，让两者在命名空间上永不相交。
+//
+// 本用例不需要真的调 AI：直接把两种形状分别塞进两个 key，再看页面能不能正常渲染。
+test("每日复盘页：复盘正文与对话各存各的，不互相覆盖", async ({ page }) => {
+  await assertSandbox(page);
+  await fakeLlmConfigured(page);
+
+  const MARK = `E2E 复盘正文 ${Date.now()}`;
+  // 页面级 key 存字符串；对话 key（带 chat: 前缀）存消息数组
+  await page.request.put("/api/aisession/daily-review", { data: { data: MARK } });
+  await page.request.put("/api/aisession/chat%3Adaily-review", {
+    data: { data: [{ role: "user", content: "问一句" }, { role: "assistant", content: "答一句", tools: [] }] },
+  });
+
+  await page.goto("/daily-review");
+  // 复盘正文正常渲染 = 它没有被对话数组覆盖（覆盖了会整页崩成错误边界）
+  await expect(page.getByText(MARK)).toBeVisible();
+  await expect(page.getByText(/Unexpected Application Error/)).toHaveCount(0);
+
+  // 对话也还在，各存各的
+  await page.getByRole("button", { name: "问 AI" }).first().click();
+  await expect(page.getByText("答一句")).toBeVisible();
+
+  await page.request.delete("/api/aisession/daily-review");
+  await page.request.delete("/api/aisession/chat%3Adaily-review");
+});
+
+// ── 回归：存档形状不对时，页面必须活着 ───────────────────────────────
+//
+// 上一条修的是"为什么会撞 key"，这一条修的是"撞了之后为什么会整页崩"。
+// 两者都要：撞 key 已经用命名空间堵住，但**脏数据会留在后端进程里直到重启**——
+// 没有形状守卫，用户遇到一次就只能靠重启后端自救。
+//
+// 直接复现原始事故：往页面级 key 塞一个消息数组（正是当初被覆盖成的形状）。
+test("存档形状不符时忽略它，页面不崩", async ({ page }) => {
+  await assertSandbox(page);
+
+  await page.request.put("/api/aisession/daily-review", {
+    data: { data: [{ role: "user", content: "本该是字符串的地方塞了数组" }] },
+  });
+
+  await page.goto("/daily-review");
+  await expect(page.getByRole("heading", { name: /每日复盘/ })).toBeVisible();
+  await expect(page.getByText(/Unexpected Application Error/)).toHaveCount(0);
+  await expect(page.getByText(/\[object Object\]/)).toHaveCount(0);
+
+  await page.request.delete("/api/aisession/daily-review");
 });

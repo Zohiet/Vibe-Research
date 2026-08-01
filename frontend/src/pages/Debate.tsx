@@ -39,7 +39,7 @@ export function Debate() {
   const session = useAiSession<{
     code: string; rounds: number; stages: StageBox[];
     progress: { title: string; ok: boolean }[]; missing: string[]; status: string;
-  }>("debate");
+  }>("debate", (v) => typeof v === "object" && v !== null && Array.isArray((v as { stages?: unknown }).stages));
   const [code, setCode] = useState("");
   const [rounds, setRounds] = useState(1);
   const [running, setRunning] = useState(false);

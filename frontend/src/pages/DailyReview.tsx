@@ -26,7 +26,7 @@ export function DailyReview() {
   const [idxErr, setIdxErr] = useState(false);
   // AI 复盘存后端进程内存（VR-GOAL-010）：切页/刷新还在，后端一停就没。
   // 隔天不自动丢弃——统一由 <AiStamp> 标出「昨天」，判断交还用户（决策 #8）。
-  const reviewSession = useAiSession<string>("daily-review");
+  const reviewSession = useAiSession<string>("daily-review", (v) => typeof v === "string");
   const [review, setReview] = useState("");
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewErr, setReviewErr] = useState<string | null>(null);

@@ -20,7 +20,15 @@ export interface AiSession<T> {
   clear: () => void;
 }
 
-export function useAiSession<T>(key: string | null): AiSession<T> {
+/**
+ * @param isValid 可选的形状校验。**恢复出来的数据形状不对就当作没有**——
+ *   真实事故（2026-08-01）：两个消费者撞了同一个 key，复盘页拿到消息数组喂给
+ *   ReactMarkdown，**整页崩成错误边界**。撞 key 已经用命名空间修掉了，
+ *   但「存档形状不对 → 整页崩」这个失败模式本身也得堵：
+ *   会话内存是副功能，**副功能不该有能力干掉主页面**。
+ *   而且脏数据会留在后端进程里直到重启——没有这道守卫，用户只能靠重启自救。
+ */
+export function useAiSession<T>(key: string | null, isValid?: (v: unknown) => boolean): AiSession<T> {
   const [loaded, setLoaded] = useState(false);
   const [data, setData] = useState<T | null>(null);
   const [ts, setTs] = useState<number | null>(null);
@@ -33,7 +41,13 @@ export function useAiSession<T>(key: string | null): AiSession<T> {
     let alive = true;
     setLoaded(false);
     api.aiSessionGet<T>(key)
-      .then((r) => { if (alive && keyRef.current === key) { setData(r.data); setTs(r.ts); } })
+      .then((r) => {
+        if (!alive || keyRef.current !== key) return;
+        const ok = r.data === null || !isValid || isValid(r.data);
+        if (!ok) console.warn(`[useAiSession] ${key} 存档形状不符，已忽略`);
+        setData(ok ? r.data : null);
+        setTs(ok ? r.ts : null);
+      })
       // 后端没起 / 端点出错都当作"没有存档"——副功能不能干掉主页面（tools.py 的「失败不抛」同源）
       .catch(() => { if (alive) { setData(null); setTs(null); } })
       .finally(() => { if (alive) setLoaded(true); });
