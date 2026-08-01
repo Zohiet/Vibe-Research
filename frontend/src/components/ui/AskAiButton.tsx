@@ -280,10 +280,11 @@ ${await extraContext.fetch()}`;
                 </div>
 
                 <div className="border-t border-border/60 p-3">
+                  {/* 字号与下方输入框一致（text-sm）——它是要被读、被点的控件，不是脚注 */}
                   {extraContext && (
-                    <label className="mb-2 flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground">
+                    <label className="mb-2 flex cursor-pointer items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
                       <input type="checkbox" checked={useExtra} onChange={(e) => setUseExtra(e.target.checked)}
-                        className="h-3 w-3 accent-primary" />
+                        className="h-3.5 w-3.5 accent-primary" />
                       {extraContext.label}
                     </label>
                   )}
