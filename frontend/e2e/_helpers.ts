@@ -91,6 +91,21 @@ export async function resetSandbox(page: Page) {
   }
 }
 
+/**
+ * 让页面以为「已接入 AI」——问 AI 面板只在配置齐全时才渲染对话区与输入框，
+ * 否则显示的是引导去设置的界面（VR-GOAL-010、013 各踩过一次）。
+ *
+ * 塞的是**假配置**：验收脚本从不真的发消息，所以不会打任何模型接口、不烧钱。
+ * 必须在 goto 之前调（addInitScript 只对之后的导航生效）。
+ */
+export async function fakeLlmConfigured(page: Page) {
+  await page.addInitScript(() => {
+    localStorage.setItem("vr-llm", JSON.stringify({
+      provider: "openai", baseURL: "http://127.0.0.1:1/v1", apiKey: "e2e-fake", model: "e2e-model",
+    }));
+  });
+}
+
 /** 后端健康检查——验收脚本开头调，把「后端没起」和「功能坏了」区分开。 */
 export async function assertBackendUp(page: Page) {
   const resp = await page.request.get("/api/health");

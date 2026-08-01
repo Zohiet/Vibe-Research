@@ -17,6 +17,13 @@ interface Props {
   // 命名按"对话是关于谁的"：portfolio / watchlist / stock:600519 / sector:ai-chain。
   // **不能拿 context 去哈希**——context 里含实时行情，价格一跳 key 就变、对话就"丢"了。
   sessionKey: string;
+  // 可选的额外上下文（VR-GOAL-013）。勾选框渲染在**面板内**——
+  // 控制项必须和它的效果在同一个视野里；放在页面上的话，勾选会在对话进行中
+  // 静默改变下一轮要发的内容、而面板里看不到任何变化。
+  //
+  // 本组件**不知道额外上下文是什么**（wiki 研究页也好、别的也好），只知道
+  // "有个可选的东西，勾了就去取、拼进 context"。个股页传 wiki，将来别的页面传别的。
+  extraContext?: { label: string; fetch: () => Promise<string> };
   suggestions?: string[];
   label?: string;
 }
@@ -56,13 +63,14 @@ export function finalizeOnAbort(msgs: Msg[]): Msg[] {
 
 // 「问 AI」入口 —— 把当前分栏内容作为上下文，调用户自己配置的模型；
 // AI 可自行调 A股数据工具作答。结论由用户模型给出，本产品不校准、不负责。
-export function AskAiButton({ context, sessionKey, suggestions = [], label = "问 AI" }: Props) {
+export function AskAiButton({ context, sessionKey, extraContext, suggestions = [], label = "问 AI" }: Props) {
   const [open, setOpen] = useState(false);
   const [configured, setConfigured] = useState(false);
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [useExtra, setUseExtra] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   // 在跑的流式请求：关面板/换问题时中止，省用户的订阅/API 额度，也防迟到 chunk 写进新气泡
   const abortRef = useRef<AbortController | null>(null);
@@ -109,13 +117,25 @@ export function AskAiButton({ context, sessionKey, suggestions = [], label = "�
     // 更新「最后一条 assistant 气泡」（不可变）。
     const patchLast = (fn: (msg: ChatMsg & { tools?: ToolUse[] }) => ChatMsg & { tools?: ToolUse[] }) =>
       setMsgs((m) => m.map((msg, i) => (i === m.length - 1 && msg.role === "assistant" ? fn(msg) : msg)));
+    // 勾了才取，而且是**发消息时**才取——勾上就拉的话，你勾了又取消就白花一次
+    let ctx = context;
+    if (useExtra && extraContext) {
+      try {
+        ctx = `${context}
+
+${await extraContext.fetch()}`;
+      } catch {
+        // 附加上下文拿不到不该阻断主功能——照常发，只是这轮没带上
+        setErr(`${extraContext.label}拉取失败，本轮未带上`);
+      }
+    }
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
     // 只有仍是「当前这次请求」才允许写 UI——旧请求的迟到 chunk 直接丢弃
     const alive = () => abortRef.current === ac && !ac.signal.aborted;
     try {
-      await chatStream(history, context, {
+      await chatStream(history, ctx, {
         onTool: (tool, args) => { if (alive()) patchLast((msg) => ({ ...msg, tools: [...(msg.tools || []), { name: tool, arg: argStr(args) }] })); },
         onDelta: (t) => { if (alive()) patchLast((msg) => ({ ...msg, content: msg.content + t })); },
       }, ac.signal);
@@ -254,6 +274,13 @@ export function AskAiButton({ context, sessionKey, suggestions = [], label = "�
                 </div>
 
                 <div className="border-t border-border/60 p-3">
+                  {extraContext && (
+                    <label className="mb-2 flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground">
+                      <input type="checkbox" checked={useExtra} onChange={(e) => setUseExtra(e.target.checked)}
+                        className="h-3 w-3 accent-primary" />
+                      {extraContext.label}
+                    </label>
+                  )}
                   <div className="flex items-end gap-2">
                     <textarea
                       value={input}

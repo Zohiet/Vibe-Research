@@ -7,12 +7,13 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { AskAiButton } from "@/components/ui/AskAiButton";
 import { EarningsSnapshot } from "@/components/ui/EarningsSnapshot";
+import { WikiCard } from "@/components/ui/WikiCard";
 import { Disclaimer } from "@/components/ui/Disclaimer";
 import {
   api, ApiError, type Valuation, type Report, type NewsItem, type ValPercentile, type ValMetric,
   type Financials, type Announcement, type MarginRow, type BlockTradeRow, type HolderRow,
   type DividendRow, type FundFlowRow, type DragonTiger, type Lockup, type Blocks, type HotConcept, type QaRow,
-  type GlobalStock,
+  type GlobalStock, type WikiStock,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -100,6 +101,8 @@ export function StockData() {
   const [hotCon, setHotCon] = useState<HotConcept[]>([]);
   const [qa, setQa] = useState<QaRow[]>([]);
   const [gstock, setGStock] = useState<GlobalStock | null>(null);  // 美股 / 港股
+  // wiki 研究页（VR-GOAL-013）。只对 A 股查——美股代码是字母，wiki 的 ticker 全是六位数字。
+  const [wiki, setWiki] = useState<WikiStock | null>(null);
   const runIdRef = useRef(0);
 
   const run = async () => {
@@ -108,7 +111,7 @@ export function StockData() {
     const rid = ++runIdRef.current;
     setLoading(true); setErr(null); setDepNote(null); setVal(null); setReports([]); setNews([]); setPctl(null); setFin(null); setAnns([]);
     setMargin([]); setBlockT([]); setHolders([]); setDividend([]); setFundFlow([]); setDt(null); setLockup(null); setBlocks(null); setHotCon([]); setQa([]);
-    setGStock(null);
+    setGStock(null); setWiki(null);
 
     // 6 位纯数字 = A 股；否则（字母 / 港股短代码）走美股 / 港股（global-stock-data）
     if (!/^\d{6}$/.test(c)) {
@@ -125,6 +128,8 @@ export function StockData() {
 
     // A 股：竞态守卫（快速换代码时只让最新一次回填）+ 资金面/筹码独立回填、不阻塞主数据
     const ok = <T,>(set: (v: T) => void) => (v: T) => { if (rid === runIdRef.current) set(v); };
+    // wiki 研究页：本地读、毫秒级，但仍走独立回填——它是副功能，读不到不该拖慢或阻断行情
+    api.wikiStock(c).then(ok(setWiki)).catch(() => {});
     api.margin(c).then(ok(setMargin)).catch(() => {});
     api.blockTrade(c).then(ok(setBlockT)).catch(() => {});
     api.holders(c).then(ok(setHolders)).catch(() => {});
@@ -200,6 +205,11 @@ export function StockData() {
         actions={(val || gstock) && (
           <AskAiButton
             sessionKey={`stock:${(gstock?.code || code || "empty")}`}
+            extraContext={wiki?.data ? {
+              // 体积必须标出来：全文每轮都会重发，代价得可见
+              label: `带上 wiki 研究页（约 ${Math.round(wiki.data.chars / 100) / 10}k 字）`,
+              fetch: async () => (await api.wikiStockFull(code.trim())).text,
+            } : undefined}
             context={gstock ? gAiContext : aiContext}
             label="让 AI 读这些数据"
             suggestions={gstock
@@ -296,6 +306,12 @@ export function StockData() {
         </>
       )}
 
+      {wiki && !wiki.enabled && wiki.error && (
+        <GlassCard className="mb-3 border-warning/30">
+          <p className="py-1 text-sm text-warning">wiki 目录不可读，研究页已停用：{wiki.error}</p>
+        </GlassCard>
+      )}
+
       {val && (
         <>
           <GlassCard glow className="mb-4">
@@ -318,6 +334,10 @@ export function StockData() {
               <p className="mt-3 text-xs text-warning">{val.forecast_note}</p>
             )}
           </GlassCard>
+
+          {/* 你自己的判断，放在外部数据之前——但不放在行情之上（打开这页首先是要看行情）。
+              wiki 里没有这只股票时整块不渲染，不出现「暂无」文案。 */}
+          {wiki?.data && <WikiCard s={wiki.data} />}
 
           {/* 财报速览（结论先行摘要，借鉴 equity-research 的结构纪律，剔除评级/目标价） */}
           <EarningsSnapshot val={val} fin={fin} pctl={pctl} />

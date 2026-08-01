@@ -30,7 +30,9 @@ import market
 import myreports as mr
 import reflection as reflect_layer
 import myaccumulation as ma
+import wikidir
 import wikipush
+import wikiread
 import aisession
 
 app = FastAPI(title="Vibe-Research API", version="0.2.2")
@@ -397,6 +399,42 @@ def myaccumulation_push_wiki(nid: str):
     except OSError as e:
         raise HTTPException(500, f"写入 wiki 失败：{e}") from e
     return {"data": {"path": str(dest)}}
+
+
+# ── 从 wiki 只读该股票的研究页（VR-GOAL-013）────────────────────────
+# **只读**：wikiread.py 全模块无写操作，读写被物理分在两个模块。
+_STOCK_CODE = re.compile(r"^\d{6}$")
+
+
+@app.get("/api/wiki/stock/{code}")
+def wiki_stock(code: str):
+    """该股票的 wiki 研究页摘要；没有这一页 → data=null（界面什么都不显示）。"""
+    if not _STOCK_CODE.match(code):
+        raise HTTPException(400, "代码必须是 6 位数字")
+    st = wikidir.base_status()
+    if not st["enabled"]:
+        return {"data": {**st, "data": None}}
+    try:
+        return {"data": {**st, "data": wikiread.summary(code)}}
+    except OSError as e:
+        # 副功能读不到不能干掉个股页——降级成"不可用 + 原因"
+        return {"data": {"enabled": False, "error": f"读取失败：{e}", "data": None}}
+
+
+@app.get("/api/wiki/stock/{code}/full")
+def wiki_stock_full(code: str):
+    """整页原文，供「带上 wiki 研究页」勾选后喂给用户自己的 AI。"""
+    if not _STOCK_CODE.match(code):
+        raise HTTPException(400, "代码必须是 6 位数字")
+    try:
+        text = wikiread.full_text(code)
+    except wikidir.WikiUnavailable as e:
+        raise HTTPException(400, str(e)) from e
+    except OSError as e:
+        raise HTTPException(500, f"读取失败：{e}") from e
+    if text is None:
+        raise HTTPException(404, "wiki 里没有这只股票的研究页")
+    return {"data": {"text": text}}
 
 
 # ── AI 会话内存（VR-GOAL-010）─────────────────────────────────────────

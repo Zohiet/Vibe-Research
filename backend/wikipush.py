@@ -15,20 +15,19 @@
   转换一旦写进 VR，wiki 那边改 schema 就得回来改 VR。
 
 隐私：沉淀是用户私有数据，投递是**本机文件复制**，不经网络、不出机器。
+
+目录定位与「这是不是 llm-wiki」的校验在 `wikidir.py`（VR-GOAL-013 抽出，读写两侧共用）。
+**必须 `import wikidir` 而不是 `from wikidir import WIKI_DIR`**——理由见那个文件的头注释。
 """
 
 from __future__ import annotations
 
-import os
 import re
 import shutil
 import sys
 from pathlib import Path
 
-# 空串视同未设置（与 VR_DATA_DIR / VR_ACCUMULATION_DIR 语义一致，
-# 避免 Path("") 落到进程工作目录，在别人家里造出 raw/vr/）。
-_ENV = os.environ.get("VR_WIKI_DIR", "").strip()
-WIKI_DIR: Path | None = Path(_ENV) if _ENV else None
+import wikidir
 
 _VR_SUB = ("raw", "vr")            # 待摄入
 _INGESTED_SUB = ("raw", "vr", "ingested")  # wiki 处理完移到这儿
@@ -37,23 +36,9 @@ _ID_LEN = 8  # 文件名尾部嵌的 id 前缀长度；id 是 uuid4().hex，8 �
 _ID_TAIL = re.compile(r"_([0-9a-f]{%d})$" % _ID_LEN)
 
 
-class WikiUnavailable(Exception):
-    """wiki 目录没配、不存在、或看起来不是一个 llm-wiki。消息直接给用户看。"""
-
-
-def _require_wiki() -> Path:
-    """返回校验通过的 wiki 根目录；任何不对劲都抛 WikiUnavailable。
-
-    校验「含 CLAUDE.md 且含 wiki/」而不只是「目录存在」——VR_WIKI_DIR 指错地方
-    （比如指到 VR 自己）时必须明确报错，不能默默在别人的目录里造 raw/vr/。
-    """
-    if WIKI_DIR is None:
-        raise WikiUnavailable("未配置 VR_WIKI_DIR")
-    if not WIKI_DIR.is_dir():
-        raise WikiUnavailable(f"目录不存在：{WIKI_DIR}")
-    if not (WIKI_DIR / "CLAUDE.md").is_file() or not (WIKI_DIR / "wiki").is_dir():
-        raise WikiUnavailable(f"{WIKI_DIR} 看起来不是 llm-wiki（缺 CLAUDE.md 或 wiki/ 目录）")
-    return WIKI_DIR
+# 调用方（app.py）catch 的是 wikipush.WikiUnavailable，保持这个名字可用。
+WikiUnavailable = wikidir.WikiUnavailable
+_require_wiki = wikidir.require_wiki
 
 
 def _pushed_ids(root: Path) -> set[str]:
@@ -82,13 +67,11 @@ def status() -> dict:
     - 配了但读不到     → enabled=False, error="原因"（必须让用户看见，否则
                           「我明明配了，按钮怎么没了」永远解释不清）
     """
+    base = wikidir.base_status()
+    if not base["enabled"]:
+        return {**base, "pushed_ids": set()}
     try:
-        root = _require_wiki()
-    except WikiUnavailable as e:
-        # 未配置是正常状态，不算错误，也不打日志
-        return {"enabled": False, "error": None if WIKI_DIR is None else str(e), "pushed_ids": set()}
-    try:
-        return {"enabled": True, "error": None, "pushed_ids": _pushed_ids(root)}
+        return {**base, "pushed_ids": _pushed_ids(wikidir.WIKI_DIR)}
     except OSError as e:
         print(f"[wikipush] 扫描 wiki 目录失败：{e}", file=sys.stderr)
         return {"enabled": False, "error": f"读取失败：{e}", "pushed_ids": set()}
