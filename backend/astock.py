@@ -713,35 +713,119 @@ def dividend_history(code: str, page_size: int = 20) -> list[dict]:
     } for r in data]
 
 
-def stock_fund_flow_120d(code: str) -> list[dict]:
-    """个股资金流（日级，最近 120 交易日）：主力 / 小单 / 中单 / 大单 / 超大单净流入（元）。"""
+def _ff_num(x) -> float:
+    try:
+        return float(x) if x not in ("-", "", None) else 0.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _fund_flow_em(host: str, code: str, lmt: int) -> list[dict]:
+    """东财 fflow 日线的通用解析（push2his 与 push2delay 同构，只差主机与可用天数）。
+
+    **失败抛出，不返回空**——「连不上」和「这只股没有资金流」必须分得开。
+    这里曾经是 `except Exception: return []`，于是上层永远只看到一个空列表，
+    端点的 docstring 只好写着「可能返回空（非代码问题）」——那是在记录缺陷，不是修它。
+    """
     market_code = 1 if code.startswith("6") else 0
     params = {
         "secid": f"{market_code}.{code}",
         "fields1": "f1,f2,f3,f7",
         "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63,f64,f65",
-        "lmt": "120",
+        "lmt": str(lmt),
     }
-    headers = {"User-Agent": UA, "Referer": "https://quote.eastmoney.com/", "Origin": "https://quote.eastmoney.com"}
-    try:
-        d = em_get("https://push2his.eastmoney.com/api/qt/stock/fflow/daykline/get",
-                   params=params, headers=headers, timeout=15).json()
-    except Exception:
-        return []
+    headers = {"User-Agent": UA, "Referer": "https://quote.eastmoney.com/",
+               "Origin": "https://quote.eastmoney.com"}
+    d = em_get(f"https://{host}/api/qt/stock/fflow/daykline/get",
+               params=params, headers=headers, timeout=15).json()
     rows = []
-    for line in d.get("data", {}).get("klines", []):
+    for line in (d.get("data") or {}).get("klines") or []:
         p = line.split(",")
         if len(p) >= 6:
-            def _f(x):
-                try:
-                    return float(x) if x not in ("-", "") else 0.0
-                except ValueError:
-                    return 0.0
             rows.append({
-                "date": p[0], "main_net": _f(p[1]), "small_net": _f(p[2]),
-                "mid_net": _f(p[3]), "large_net": _f(p[4]), "super_net": _f(p[5]),
+                "date": p[0], "main_net": _ff_num(p[1]), "small_net": _ff_num(p[2]),
+                "mid_net": _ff_num(p[3]), "large_net": _ff_num(p[4]), "super_net": _ff_num(p[5]),
             })
     return rows
+
+
+def _fund_flow_sina(code: str, days: int = 60) -> list[dict]:
+    """资金流备用源：新浪日度。**独立风控面**，这是它存在的全部理由。
+
+    主源 push2his 与备胎 push2delay 同属东财、同一个风控面——实测它们会**一起挂**
+    （2026-08-03：push2his 整机 RemoteDisconnected，直连与代理都不通）。
+    第二顺位若还留在东财域内，在最常见的失败模式下必然也是空的。
+
+    ⚠️ **字段口径与东财不同，所以字段名也不同。** 新浪给的是净流入额 `netamount`
+    与超大单 `r0_net`，**没有主力/大/中/小四档拆分**；东财的 `main_net` 是
+    「超大单+大单」。绝不把 `netamount` 映射成 `main_net`——那是让同一个字段名
+    承载两种定义，数字还在、含义变了、而且看不出来。缺的档位也不补 0
+    （VR-GOAL-014 已立此规矩）。
+    """
+    import json as _json
+    import urllib.request
+
+    # 92/8 开头是北交所；误判成 sh/sz 时新浪返回空数组（a-stock-data/SKILL.md 实测）
+    prefix = ("bj" if code.startswith(("92", "8"))
+              else "sh" if code.startswith(("6", "9")) else "sz")
+    url = ("https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/"
+           f"MoneyFlow.ssl_qsfx_zjlrqs?page=1&num={days}&sort=opendate&asc=0&daima={prefix}{code}")
+    # 不走 em_get：那是东财专用的 ≥1s 串行限流 + 代理探测，把新浪塞进那条队列
+    # 只会拖慢所有东财请求。SKILL.md 判定新浪「风险低、不封 IP」。
+    req = urllib.request.Request(url, headers={"User-Agent": UA,
+                                               "Referer": "https://finance.sina.com.cn/"})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        text = r.read().decode("utf-8", "ignore")
+    arr = _json.loads(text[text.index("["):text.rindex("]") + 1])
+    rows = [{
+        "date": x.get("opendate"),
+        "net_amount": _ff_num(x.get("netamount")),
+        "super_net": _ff_num(x.get("r0_net")),
+        "close": _ff_num(x.get("trade")),
+        "turnover": _ff_num(x.get("turnover")),
+    } for x in arr if x.get("opendate")]
+    # ⚠️ **必须反转**：新浪按 asc=0 倒序返回（最新在前），东财的 klines 是正序（最老在前）。
+    # 下游一律按正序假设写（`rows[-days:]`、`slice(-20)` 取最近 N 天），
+    # 不归一化的话新浪这条路会取到窗口的另一头——实测「近5日」拿回的是三个月前那几天，
+    # 而且数字看起来完全正常，从界面上根本看不出来。归一化放在源适配器里，
+    # 下游不需要知道哪个源是什么顺序。
+    rows.reverse()
+    return rows
+
+
+# 降级链：主源 → 换风控面 → 同域延迟线。顺序理由见 _fund_flow_sina 的注释。
+# note 会**原样显示在界面上**（个股页那行橙字），所以不写 markdown 星号——
+# 它同时喂给 AI 和喂给人，人这一侧看到的是纯文本。
+_FUND_FLOW_CHAIN = [
+    ("eastmoney", "主源（东财 push2his）", lambda c: _fund_flow_em("push2his.eastmoney.com", c, 120)),
+    ("sina", "备用源新浪，净额口径，无主力/大/中/小四档拆分", lambda c: _fund_flow_sina(c, 60)),
+    ("eastmoney-delay", "东财延迟线，仅当天一条，无历史累计", lambda c: _fund_flow_em("push2delay.eastmoney.com", c, 120)),
+]
+
+
+def fund_flow(code: str) -> dict:
+    """个股资金流，三级降级。返回 `{source, degraded, note, rows}`。
+
+    **全部源都挂时抛异常**（附各源失败原因），由端点转成 502。
+    绝不返回空列表冒充「没有数据」——那正是这个函数以前的病根。
+    """
+    reasons = []
+    for source, note, fetch in _FUND_FLOW_CHAIN:
+        try:
+            rows = fetch(code)
+        except Exception as e:  # noqa: BLE001 — 逐源记原因，全挂时一起报出去
+            reasons.append(f"{source}: {type(e).__name__}")
+            continue
+        if rows:
+            return {"source": source, "degraded": source != "eastmoney",
+                    "note": "" if source == "eastmoney" else note, "rows": rows}
+        reasons.append(f"{source}: 返回空")
+    raise RuntimeError("资金流三个源均不可用（" + "；".join(reasons) + "）")
+
+
+def stock_fund_flow_120d(code: str) -> list[dict]:
+    """（保留给既有调用方）主源的原始形状。失败抛出，不再吞成空列表。"""
+    return _fund_flow_em("push2his.eastmoney.com", code, 120)
 
 
 def dragon_tiger_board(code: str, trade_date: str | None = None, look_back: int = 30) -> dict:

@@ -69,7 +69,9 @@ TOOLS: list[dict] = [
 
     # —— 资金面与筹码 ——
     _t("query_fund_flow",
-       "查个股资金流向：最近若干日主力/超大单/大单/中单/小单净流入，并附近 5 日、20 日累计主力净额。",
+       "查个股资金流向：最近若干日主力/超大单/大单/中单/小单净流入，并附近 5 日、20 日累计主力净额。"
+       "主源不可达时会降级到备用源，此时返回体带 source 与 note，字段口径可能不同"
+       "（如新浪只有净额 net_amount、无四档拆分）——按实际返回的字段读，不要假定一定有 main_net。",
        {**_CODE, "days": {"type": "integer", "description": "明细返回最近多少日，默认 10，最大 60"}},
        ["code"]),
     _t("query_margin", "查个股融资融券：融资余额、融资买入/偿还、融券余额趋势（最近若干期）。", _CODE, ["code"]),
@@ -184,61 +186,44 @@ def _kline(args: dict):
     return {"summary": stat, "recent": detail}
 
 
-_FFLOW_DELAY = "https://push2delay.eastmoney.com/api/qt/stock/fflow/daykline/get"
-
-
-def _fund_flow_today(code: str) -> list[dict]:
-    """当日资金流（备用源）。
-
-    主源 push2his 在部分网络下连不通（本机实测被拒），push2delay 这条延迟行情线路仍可达，
-    代价是只给当天一条、拿不到历史。宁可给「今天」也不要整块缺失。
-    """
-    import requests
-
-    secid = f"{1 if code.startswith('6') else 0}.{code}"
-    params = {"secid": secid, "fields1": "f1,f2,f3,f7",
-              "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63,f64,f65",
-              "lmt": "120", "klt": "101"}
-    headers = {"User-Agent": astock.UA, "Referer": "https://quote.eastmoney.com/",
-               "Origin": "https://quote.eastmoney.com"}
-    d = requests.get(_FFLOW_DELAY, params=params, headers=headers, timeout=12).json()
-    out = []
-    for line in (d.get("data") or {}).get("klines") or []:
-        p = line.split(",")
-        if len(p) < 6:
-            continue
-        def _f(x):
-            try:
-                return float(x)
-            except (TypeError, ValueError):
-                return 0.0
-        out.append({"date": p[0], "main_net": _f(p[1]), "small_net": _f(p[2]),
-                    "mid_net": _f(p[3]), "large_net": _f(p[4]), "super_net": _f(p[5])})
-    return out
-
-
 def _fund_flow(args: dict):
+    """资金流。降级链在 `astock.fund_flow` 里 —— **这里不再自带备胎**。
+
+    以前 tools 有私有备胎、`/api/fund-flow` 没有，于是辩论底稿能拿到数据、
+    个股页却是空的：同一份数据两条路径两种结果。逻辑下沉到数据层后，
+    页面 / 辩论 / MCP 三条出口一次都拿到（VR-GOAL-018）。
+    """
     code = str(args["code"])
-    rows = astock.stock_fund_flow_120d(code)
-    if not rows:
-        try:
-            rows = _fund_flow_today(code)
-        except Exception:  # noqa: BLE001
-            rows = []
-        if rows:  # 备用源只有当日，明说清楚，别让模型误以为是完整历史
-            return {"unit": "元", "note": "主源不可达，以下仅为当日资金流，无历史累计",
-                    "recent": rows}
-    if not rows:
-        return {"error": "无资金流数据"}
+    try:
+        ff = astock.fund_flow(code)
+    except Exception as e:  # noqa: BLE001 — 工具层失败不抛，转成 error 回喂给模型
+        return {"error": f"无资金流数据（{e}）"}
+
+    rows, source = ff["rows"], ff["source"]
     days = max(1, min(int(args.get("days") or 10), 60))
     tail = rows[-days:]
+
+    if source == "sina":
+        # ⚠️ 新浪是净额口径、没有四档拆分。**不映射成 main_net**，汇总项也换名，
+        # 否则「近20日主力净流入」会在没人察觉的情况下换了定义。
+        def _sum_net(n: int) -> float:
+            return round(sum(r.get("net_amount", 0) for r in rows[-n:]) / 1e8, 3)
+        return {
+            "unit": "元（汇总项单位：亿元）", "source": source, "note": ff["note"],
+            "net_amount_5d_yi": _sum_net(5), "net_amount_20d_yi": _sum_net(20),
+            "recent": _pick(tail, ("date", "net_amount", "super_net", "close", "turnover"), days),
+        }
+
     def _sum(n: int) -> float:
         return round(sum(r.get("main_net", 0) for r in rows[-n:]) / 1e8, 3)
-    return {
+    out = {
         "unit": "元（汇总项单位：亿元）",
         "main_net_5d_yi": _sum(5), "main_net_20d_yi": _sum(20), "main_net_60d_yi": _sum(60),
         "recent": _pick(tail, ("date", "main_net", "super_net", "large_net", "mid_net", "small_net"), days),
     }
+    if ff["degraded"]:      # 延迟线只有当天，别让模型误以为是完整历史
+        out["source"], out["note"] = source, ff["note"]
+    return out
 
 
 def _concepts(args: dict):

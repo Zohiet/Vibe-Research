@@ -12,7 +12,7 @@ import { Disclaimer } from "@/components/ui/Disclaimer";
 import {
   api, ApiError, type Valuation, type Report, type NewsItem, type ValPercentile, type ValMetric,
   type Financials, type Announcement, type MarginRow, type BlockTradeRow, type HolderRow,
-  type DividendRow, type FundFlowRow, type DragonTiger, type Lockup, type Blocks, type HotConcept, type QaRow,
+  type DividendRow, type FundFlow, type DragonTiger, type Lockup, type Blocks, type HotConcept, type QaRow,
   type GlobalStock, type WikiStock,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -94,7 +94,10 @@ export function StockData() {
   const [blockT, setBlockT] = useState<BlockTradeRow[]>([]);
   const [holders, setHolders] = useState<HolderRow[]>([]);
   const [dividend, setDividend] = useState<DividendRow[]>([]);
-  const [fundFlow, setFundFlow] = useState<FundFlowRow[]>([]);
+  const [fundFlow, setFundFlow] = useState<FundFlow | null>(null);
+  // 资金流三个源全挂时的原因。**不再静默吞掉**——以前这里是 .catch(() => {})，
+  // 于是「东财连不上」和「这只股没有资金流」在界面上长得一模一样（VR-GOAL-018）。
+  const [fundFlowErr, setFundFlowErr] = useState<string | null>(null);
   const [dt, setDt] = useState<DragonTiger | null>(null);
   const [lockup, setLockup] = useState<Lockup | null>(null);
   const [blocks, setBlocks] = useState<Blocks | null>(null);
@@ -110,7 +113,7 @@ export function StockData() {
     if (!c) { setErr("请输入代码"); return; }
     const rid = ++runIdRef.current;
     setLoading(true); setErr(null); setDepNote(null); setVal(null); setReports([]); setNews([]); setPctl(null); setFin(null); setAnns([]);
-    setMargin([]); setBlockT([]); setHolders([]); setDividend([]); setFundFlow([]); setDt(null); setLockup(null); setBlocks(null); setHotCon([]); setQa([]);
+    setMargin([]); setBlockT([]); setHolders([]); setDividend([]); setFundFlow(null); setDt(null); setLockup(null); setBlocks(null); setHotCon([]); setQa([]); setFundFlowErr(null);
     setGStock(null); setWiki(null);
 
     // 6 位纯数字 = A 股；否则（字母 / 港股短代码）走美股 / 港股（global-stock-data）
@@ -134,7 +137,8 @@ export function StockData() {
     api.blockTrade(c).then(ok(setBlockT)).catch(() => {});
     api.holders(c).then(ok(setHolders)).catch(() => {});
     api.dividend(c).then(ok(setDividend)).catch(() => {});
-    api.fundFlow(c).then(ok(setFundFlow)).catch(() => {});
+    api.fundFlow(c).then(ok(setFundFlow)).catch((e) =>
+      ok(setFundFlowErr)(e instanceof ApiError ? e.message : "资金流取不到"));
     api.dragonTiger(c).then(ok(setDt)).catch(() => {});
     api.lockup(c).then(ok(setLockup)).catch(() => {});
     api.blocks(c).then(ok(setBlocks)).catch(() => {});
@@ -440,16 +444,23 @@ export function StockData() {
           </GlassCard>
 
           {/* 资金面 · 筹码（融资融券 / 股东户数 / 主力资金流 / 分红 / 大宗交易） */}
-          {(margin.length > 0 || holders.length > 0 || fundFlow.length > 0 || dividend.length > 0) && (
+          {(margin.length > 0 || holders.length > 0 || fundFlow || fundFlowErr || dividend.length > 0) && (
             <GlassCard className="mb-4">
               <h3 className="mb-3 flex items-center gap-1.5 text-sm font-semibold"><Wallet className="h-4 w-4 text-primary" /> 资金面 · 筹码</h3>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 {margin[0] && <Metric k="融资余额" v={yi(margin[0].rzye)} sub={margin[0].date} />}
                 {margin[0] && <Metric k="融券余额" v={yi(margin[0].rqye)} />}
                 {holders[0] && <Metric k="股东户数" v={Number(holders[0].holder_num).toLocaleString()} sub={`环比 ${pct(holders[0].change_ratio)}`} />}
-                {fundFlow.length > 0 && <Metric k="近20日主力净流入" v={yi(fundFlow.slice(-20).reduce((s, r) => s + r.main_net, 0))} />}
+                {/* 口径跟着来源走：东财是「主力净流入」，新浪只有「净额」——
+                    指标名必须一起换，不能让同一个名字底下换了定义。 */}
+                {fundFlow && (fundFlow.source === "sina"
+                  ? <Metric k="近20日资金净额" v={yi(fundFlow.rows.slice(-20).reduce((s, r) => s + (r.net_amount ?? 0), 0))} sub="新浪 · 净额口径" />
+                  : <Metric k="近20日主力净流入" v={yi(fundFlow.rows.slice(-20).reduce((s, r) => s + (r.main_net ?? 0), 0))}
+                            sub={fundFlow.degraded ? "东财延迟线 · 仅当天" : undefined} />)}
                 {dividend[0] && <Metric k="最近派息(每10股)" v={`${dividend[0].bonus_rmb} 元`} sub={dividend[0].date} />}
               </div>
+              {fundFlow?.degraded && <p className="mt-2 text-xs text-warning">资金流已降级：{fundFlow.note}</p>}
+              {fundFlowErr && <p className="mt-2 text-xs text-warning">资金流本次取不到：{fundFlowErr}</p>}
               {blockT.length > 0 && (
                 <div className="mt-3 border-t border-border/40 pt-3">
                   <p className="mb-2 text-xs text-muted-foreground">近期大宗交易（{blockT.length}）</p>

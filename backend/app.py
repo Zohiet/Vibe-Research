@@ -794,6 +794,18 @@ _DC_CACHE: dict = {}  # key=(endpoint, code) -> (ts, data)
 
 
 def _cached(endpoint: str, code: str, ttl: int, fetch):
+    """TTL 缓存。
+
+    ⚠️ **刻意没有 `valid` 谓词**（`market.py` 的同名函数有）。VR-GOAL-018 一度加了一个
+    「空不入缓存」的守卫给资金流用，变红实验证明它**永远不会被触发**：
+    `astock.fund_flow` 全挂时是**抛异常**的，异常从 fetch() 穿出去，
+    根本走不到写缓存这行——「失败不进缓存」由抛异常保证，不由这里保证。
+    加了就是一段永不进入的分支（`CLAUDE.md`「从不执行的代码就是 bug 藏身处」）。
+
+    另一半理由：空对不同端点语义不同。非两融标的、真没解禁的股票，空就是正确答案，
+    不缓存它等于这些股票每次请求都打上游，而东财是 ≥1s 串行限流
+    （`debate.py` 的 `empty_ok` 标记正是这个区分）。真要用时再按端点显式加。
+    """
     key = (endpoint, code)
     hit = _DC_CACHE.get(key)
     if hit and _time.time() - hit[0] < ttl:
@@ -845,11 +857,21 @@ def dividend(code: str = Query(...)):
 
 @app.get("/api/fund-flow")
 def fund_flow(code: str = Query(...)):
-    """个股资金流（东财 push2his，120 日主力净流入）。缓存 15 分钟。
-    注：push2his 对部分大陆住宅 IP 有间歇风控，可能返回空（非代码问题）。"""
+    """个股资金流，三级降级链（东财 push2his → 新浪 → 东财延迟线）。缓存 15 分钟。
+
+    返回 `{source, degraded, note, rows}` —— **不是**裸列表：走了备用源时口径不同
+    （新浪只有净额、没有四档拆分），下游必须知道自己拿的是哪一份。
+
+    三个源全挂时返回 **502 + 各源失败原因**。以前这里是 200 + 空数组，
+    于是「东财连不上」和「这只股没有资金流」在界面上长得一模一样——
+    用户在多空辩论底稿里看到的那句「未取到：资金流向」就是这么来的。
+    """
     code = _validate(code)
     try:
-        return {"data": _cached("fundflow", code, 900, lambda: astock.stock_fund_flow_120d(code))}
+        # valid：拿不到行就别缓存 —— 一次抖动不该把这只股票锁死 15 分钟
+        # 失败不进缓存 —— 靠 astock.fund_flow 抛异常保证（异常穿出去就写不到缓存），
+        # 不靠缓存层的守卫。见 _cached 的注释。
+        return {"data": _cached("fundflow", code, 900, lambda: astock.fund_flow(code))}
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"资金流异常：{e}") from e
 

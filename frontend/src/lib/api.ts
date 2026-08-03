@@ -245,7 +245,23 @@ export interface MarginRow { date: string; rzye: number; rzmre: number; rzche: n
 export interface BlockTradeRow { date: string; price: number; close: number; premium_pct: number; vol: number; amount: number; buyer: string; seller: string }
 export interface HolderRow { date: string; holder_num: number; change_ratio: number; avg_shares: number }
 export interface DividendRow { date: string; bonus_rmb: number; transfer_ratio: number; bonus_ratio: number | null; plan: string }
-export interface FundFlowRow { date: string; main_net: number; small_net: number; mid_net: number; large_net: number; super_net: number }
+// 资金流有降级链（东财 push2his → 新浪 → 东财延迟线，VR-GOAL-018）。
+// 两套口径**字段名不同**，故都是可选：东财给主力/大/中/小四档拆分，
+// 新浪只有净额 net_amount + 超大单，没有主力概念。**绝不互相映射**——
+// 同一个字段名承载两种定义，就是数字还在、含义变了、而且看不出来。
+export interface FundFlowRow {
+  date: string;
+  main_net?: number; small_net?: number; mid_net?: number; large_net?: number;
+  super_net?: number;
+  net_amount?: number; close?: number; turnover?: number;
+}
+export interface FundFlow {
+  source: "eastmoney" | "sina" | "eastmoney-delay";
+  degraded: boolean;
+  /** 降级时的口径说明，直接显示给用户 */
+  note: string;
+  rows: FundFlowRow[];
+}
 export interface DtSeat { name: string; buy_amt: number; sell_amt: number; net: number }
 export interface DragonTiger {
   records: { date: string; reason: string; net_buy: number; turnover: number }[];
@@ -317,7 +333,7 @@ export const api = {
   blockTrade: (code: string) => get<BlockTradeRow[]>(`/block-trade?code=${code}`),
   holders: (code: string) => get<HolderRow[]>(`/holders?code=${code}`),
   dividend: (code: string) => get<DividendRow[]>(`/dividend?code=${code}`),
-  fundFlow: (code: string) => get<FundFlowRow[]>(`/fund-flow?code=${code}`),
+  fundFlow: (code: string) => get<FundFlow>(`/fund-flow?code=${code}`),
   dragonTiger: (code: string) => get<DragonTiger>(`/dragon-tiger?code=${code}`),
   lockup: (code: string) => get<Lockup>(`/lockup?code=${code}`),
   blocks: (code: string) => get<Blocks>(`/blocks?code=${code}`),
