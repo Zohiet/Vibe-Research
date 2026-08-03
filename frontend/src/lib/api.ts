@@ -305,10 +305,14 @@ export const api = {
   valuation: (code: string) => get<Valuation>(`/valuation?code=${code}`),
   percentile: (code: string) => get<ValPercentile>(`/valuation/percentile?code=${code}`),
   financials: (code: string) => get<Financials>(`/financials?code=${code}`),
-  announcements: (code: string) => get<Announcement[]>(`/announcements?code=${code}`),
+  // force=1 穿透后端的 15 分钟缓存。**只在用户人手点「刷新」时传**——
+  // 页面自动加载传了就等于没缓存（VR-GOAL-017 决策 4）。
+  announcements: (code: string, force = false) =>
+    get<Announcement[]>(`/announcements?code=${code}${force ? "&force=1" : ""}`),
   quote: (codes: string) => get<Record<string, Quote>>(`/quote?codes=${codes}`),
   reports: (code: string) => get<Report[]>(`/reports?code=${code}`),
-  news: (code: string) => get<NewsItem[]>(`/news?code=${code}`),
+  news: (code: string, force = false) =>
+    get<NewsItem[]>(`/news?code=${code}${force ? "&force=1" : ""}`),
   margin: (code: string) => get<MarginRow[]>(`/margin?code=${code}`),
   blockTrade: (code: string) => get<BlockTradeRow[]>(`/block-trade?code=${code}`),
   holders: (code: string) => get<HolderRow[]>(`/holders?code=${code}`),

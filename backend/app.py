@@ -639,19 +639,28 @@ def valuation_percentile(code: str = Query(...)):
 
 _ANN_CACHE: dict = {}
 
+# 公告 / 新闻共用的缓存窗口。**两者必须一致**：资讯页把它们做成同一个页面上的两个 tab，
+# 一边 15 分钟一边 5 分钟的话，「为什么这个变了那个没变」就没法解释了（VR-GOAL-017 决策 5）。
+_FEED_TTL = 900
+
 
 @app.get("/api/announcements")
-def announcements(code: str = Query(...)):
-    """个股近期公告（东财，仅 requests）。缓存 15 分钟/代码。"""
+def announcements(code: str = Query(...), force: bool = Query(False)):
+    """个股近期公告（东财，仅 requests）。缓存 15 分钟/代码。
+
+    `force=1` 跳过缓存强制重抓 —— 只给「人手点刷新」用（VR-GOAL-017 决策 4）。
+    在此之前这个缓存是**不可穿透**的：资讯页的刷新按钮 15 分钟内点了纹丝不动。
+    """
     code = _validate(code)
     hit = _ANN_CACHE.get(code)
-    if hit and _time.time() - hit[0] < 900:
+    if hit and not force and _time.time() - hit[0] < _FEED_TTL:
         return {"data": hit[1]}
     try:
         data = astock.announcements(code)
         _ANN_CACHE[code] = (_time.time(), data)
         return {"data": data}
     except Exception as e:  # noqa: BLE001
+        # 失败不写缓存 —— 下次请求照常重试上游，不会把一次抖动锁死 15 分钟
         raise HTTPException(502, f"公告源异常：{e}") from e
 
 
@@ -700,13 +709,33 @@ def reports(code: str = Query(...), pages: int = Query(2, ge=1, le=5)):
         raise HTTPException(502, f"研报源异常：{e}") from e
 
 
+_NEWS_CACHE: dict = {}
+
+
 @app.get("/api/news")
-def news(code: str = Query(...), limit: int = Query(20, ge=1, le=50)):
-    """个股新闻（东财搜索，走 em_get，无需 akshare —— VR-GOAL-016）。"""
+def news(code: str = Query(...), limit: int = Query(20, ge=1, le=50),
+         force: bool = Query(False)):
+    """个股新闻（东财搜索，走 em_get，无需 akshare —— VR-GOAL-016）。缓存 15 分钟。
+
+    ⚠️ 这个缓存是 VR-GOAL-017 补的。VR-GOAL-016 重写本端点时只顾着修 502，
+    没注意到相邻的公告 / 财务 / 分位端点**都有**进程内缓存，只有它漏了——
+    于是资讯页每切一次 tab 就要把关注股的新闻全部重抓一遍，
+    每只都排进 `em_get` 的 ≥1s 串行队列。
+
+    `limit` 进缓存 key：不同 limit 拿到的是不同长度的列表，混用会让
+    "要 20 条却只回 5 条"这种问题变得无法解释。
+    """
     code = _validate(code)
+    key = (code, limit)
+    hit = _NEWS_CACHE.get(key)
+    if hit and not force and _time.time() - hit[0] < _FEED_TTL:
+        return {"data": hit[1]}
     try:
-        return {"data": astock.stock_news(code, limit=limit)}
+        data = astock.stock_news(code, limit=limit)
+        _NEWS_CACHE[key] = (_time.time(), data)
+        return {"data": data}
     except Exception as e:  # noqa: BLE001
+        # 失败不写缓存 —— 东财风控是间歇性的，不能让一次抖动把这只股票锁死 15 分钟
         raise HTTPException(502, f"新闻源异常：{e}") from e
 
 

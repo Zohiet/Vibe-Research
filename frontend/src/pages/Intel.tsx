@@ -220,7 +220,8 @@ function WatchlistFeed({ kind }: { kind: "filings" | "news" }) {
   const [err, setErr] = useState<string | null>(null);
   const [depNote, setDepNote] = useState<string | null>(null);
 
-  const load = useCallback(async (cs: string[]) => {
+  // force：人手点「刷新」时穿透后端的 15 分钟缓存；页面自动加载那次不穿透。
+  const load = useCallback(async (cs: string[], force = false) => {
     if (!cs.length) { setRows([]); return; }
     setLoading(true); setErr(null); setDepNote(null);
     try {
@@ -234,7 +235,7 @@ function WatchlistFeed({ kind }: { kind: "filings" | "news" }) {
       const out: FeedRow[] = [];
       if (kind === "filings") {
         const res = await Promise.all(
-          cs.map((c) => api.announcements(c).then((a) => ({ c, a })).catch(() => ({ c, a: [] as Announcement[] }))),
+          cs.map((c) => api.announcements(c, force).then((a) => ({ c, a })).catch(() => ({ c, a: [] as Announcement[] }))),
         );
         for (const { c, a } of res)
           for (const x of a)
@@ -243,7 +244,7 @@ function WatchlistFeed({ kind }: { kind: "filings" | "news" }) {
         let dep: string | null = null;
         const res = await Promise.all(
           cs.map((c) =>
-            api.news(c).then((n) => ({ c, n })).catch((e) => {
+            api.news(c, force).then((n) => ({ c, n })).catch((e) => {
               if (e instanceof ApiError && e.status === 501) dep = e.message;
               return { c, n: [] as NewsItem[] };
             }),
@@ -272,7 +273,8 @@ function WatchlistFeed({ kind }: { kind: "filings" | "news" }) {
 
   useEffect(() => { const cs = loadWatch(); setCodes(cs); load(cs); }, [load]);
 
-  const refresh = () => { const cs = loadWatch(); setCodes(cs); load(cs); };
+  // 人手点刷新 = 真的重抓（force），不是重新问一遍后端要不要给缓存
+  const refresh = () => { const cs = loadWatch(); setCodes(cs); load(cs, true); };
 
   if (!codes.length) {
     return (
@@ -353,9 +355,17 @@ export function Intel() {
         {cur.key === "investment-news" ? (
           <InvestmentNewsPanel />
         ) : cur.key === "filings" ? (
-          <WatchlistFeed kind="filings" />
+          /* ⚠️ 这两个 `key` 是必须的，不是装饰（VR-GOAL-017）。
+             两个分支是**同一个组件类型、占同一个子位置**，没有 key 时 React 判定
+             「同一个实例、只是 props 变了」→ 不重挂载 → `rows` 原样留着，
+             于是切到新闻 tab 会先显示一整屏公告，几秒后才被自己的数据替换；
+             上一个 tab 遗留的请求还能反过来盖回来。加 key 之后组件每次挂载都是干净的，
+             串味在**结构上**不可能——所以这里刻意不写 `StockData.tsx` 那种 runIdRef
+             竞态守卫：同 tab 内并发 load 发生不了（下面刷新按钮 disabled={loading}），
+             写了就是一段永不进入的分支。 */
+          <WatchlistFeed key="filings" kind="filings" />
         ) : cur.key === "news" ? (
-          <WatchlistFeed kind="news" />
+          <WatchlistFeed key="news" kind="news" />
         ) : (
           <>
             <p className="text-sm text-muted-foreground">{cur.desc}</p>
