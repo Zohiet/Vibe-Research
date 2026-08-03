@@ -13,7 +13,9 @@ export interface DebateHandlers {
   onDossierReady?: (sections: { title: string; tool: string }[], missing: string[]) => void;
   onStageStart?: (stage: DebateStage, label: string) => void;
   onDelta?: (stage: DebateStage, text: string) => void;
-  onStageDone?: (stage: DebateStage, label: string, content: string) => void;
+  /** failed：后端判定这一轮生成失败（VR-GOAL-015 就在发这个标记，
+   *  但一直没被接住 —— 于是「失败」和「成功」在界面上长得一模一样，VR-GOAL-019 补上）。 */
+  onStageDone?: (stage: DebateStage, label: string, content: string, failed: boolean) => void;
   onError?: (message: string, stage?: DebateStage) => void;
 }
 
@@ -41,7 +43,7 @@ function dispatchDebate(ev: NdjsonEvent, h: DebateHandlers) {
       h.onDelta?.(ev.stage, ev.text);
       break;
     case "stage_done":
-      h.onStageDone?.(ev.stage, ev.label, ev.content);
+      h.onStageDone?.(ev.stage, ev.label, ev.content, !!ev.failed);
       break;
     case "error":
       h.onError?.(ev.message, ev.stage);
