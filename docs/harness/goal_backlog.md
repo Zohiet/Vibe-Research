@@ -25,6 +25,7 @@
 | VR-GOAL-021 发现 | `--chart-grid` / `--chart-text` / `--chart-axis` **定义了但全仓库零引用**（死变量）。要么接上图表、要么删掉 | 021 刻意没动 |
 | VR-GOAL-020 发现 | **`conda run` 在 pytest 非零退出时自己崩溃**（进交互式 error-report 提示、吞掉输出）——变红实验会变成"做了等于没做"。改直接调 `miniforge3/envs/tradingagents/python.exe -m pytest` | 本会话已踩两次，值得写进 CLAUDE.md 或 skill |
 | VR-GOAL-020 发现 | **跑 `ci.ps1 -E2E` 会重拍全部历史 Goal 截图**（28 个文件），每次都要手动 `git checkout -- docs/screenshots/` 还原 | 与「shot() 拍不到折叠线以下」是同一处工具欠账 |
+| VR-GOAL-022 剔出 | 自选股开着实时行情时行会跟着重排，换位瞬间可能点错「移除」。「悬停时冻结重排」是便宜的后续 | 022 决策 2 权衡后不做 |
 | 版本号 | 五处版本号不一致：`frontend/package.json` 是 `0.2.3`，其余四处还是 `0.2.2` | 见 `CLAUDE.md`「改版本号时」 |
 
 ## 已完成
@@ -33,6 +34,7 @@
 
 | 编号 | 一句话 |
 |---|---|
+| VR-GOAL-022 | 自选股可按数值列排序（点表头三态循环），默认仍是加入顺序 |
 | VR-GOAL-021 | 次级文字改用语义 token，两个主题都到 AA；输入框与占位文字随主题走 |
 | VR-GOAL-020 | 亮色下 markdown 的标题/粗体/链接/行内代码不再是白底白字 |
 | VR-GOAL-019 | 辩论页恢复出来的存档不再假装在跑；中止/失败/中断分开说 |
