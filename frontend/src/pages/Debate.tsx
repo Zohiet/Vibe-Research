@@ -312,7 +312,7 @@ export function Debate() {
                 </span>
               )}
             </div>
-            <div className="prose prose-sm prose-invert max-w-none text-foreground prose-table:text-sm">
+            <div className="prose prose-sm dark:prose-invert max-w-none text-foreground prose-table:text-sm">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{s.content || "…"}</ReactMarkdown>
             </div>
           </div>

@@ -169,7 +169,7 @@ function InvestmentNewsPanel() {
                 ) : dg?.text ? (
                   <>
                     <AiStamp ts={digestSession.ts} className="mb-2" />
-                    <div className="prose prose-sm prose-invert max-w-none text-foreground"><ReactMarkdown remarkPlugins={[remarkGfm]}>{dg.text}</ReactMarkdown></div>
+                    <div className="prose prose-sm dark:prose-invert max-w-none text-foreground"><ReactMarkdown remarkPlugins={[remarkGfm]}>{dg.text}</ReactMarkdown></div>
                     <div className="mt-2"><SaveNoteButton kind="今日要点" title={`${cur.name} 今日要点`} content={dg.text} /></div>
                   </>
                 ) : dg?.needKey ? (

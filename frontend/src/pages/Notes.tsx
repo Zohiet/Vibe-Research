@@ -199,7 +199,7 @@ export function Notes() {
                 </div>
                 {open && (
                   <div className="border-t border-border/40 px-4 py-3">
-                    <div className="prose prose-sm prose-invert max-w-none text-foreground">
+                    <div className="prose prose-sm dark:prose-invert max-w-none text-foreground">
                       <ReactMarkdown remarkPlugins={[remarkGfm]}>{n.content}</ReactMarkdown>
                     </div>
 
@@ -235,7 +235,7 @@ export function Notes() {
                         ) : (
                           <>
                             {reflectId !== n.id && <AiStamp ts={reflectSession.ts} className="mb-2" />}
-                            <div className="prose prose-sm prose-invert max-w-none text-foreground">
+                            <div className="prose prose-sm dark:prose-invert max-w-none text-foreground">
                               <ReactMarkdown remarkPlugins={[remarkGfm]}>{reflectId === n.id ? reflectText : reflects[n.id]}</ReactMarkdown>
                             </div>
                             {!reflecting && (
