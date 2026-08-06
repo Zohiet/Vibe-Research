@@ -1,7 +1,7 @@
 # VR-GOAL-021 实现 Plan ｜ 次级文字改用语义 token，不再靠透明度调弱
 
 - **Goal Spec**：[`../goals/VR-GOAL-021_light-theme-secondary-text.md`](../goals/VR-GOAL-021_light-theme-secondary-text.md)
-- **确认状态**：⬜ 待确认
+- **确认状态**：✅ 已确认（2026-08-06）
 
 > **未经确认不得开始写代码。**
 

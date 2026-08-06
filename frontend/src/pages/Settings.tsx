@@ -103,7 +103,7 @@ export function Settings() {
           <div className="space-y-3 text-sm">
             <p className="text-xs text-muted-foreground">
               选一个你本机已安装并登录的 CLI。Vibe-Research 后端会用它以你的订阅额度作答，<b className="text-foreground">不用填 key</b>。
-              <span className="text-muted-foreground/60">（仅当后端跑在你本机时可用；复盘 / 今日要点 / 个股问 AI 等场景。）</span>
+              <span className="text-muted-foreground">（仅当后端跑在你本机时可用；复盘 / 今日要点 / 个股问 AI 等场景。）</span>
             </p>
             <div className="grid gap-2 sm:grid-cols-2">
               {subscriptionModels.map((m) => {
@@ -146,7 +146,7 @@ export function Settings() {
             <div>
               <label className="mb-1.5 block text-xs font-medium text-muted-foreground">选择模型</label>
               <select value={apiId} onChange={(e) => pickApiModel(e.target.value)}
-                className="w-full rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50">
+                className="w-full rounded-lg border border-border bg-input-surface px-3 py-2 text-sm outline-none focus:border-primary/50">
                 {apiModels.map((m) => (
                   <option key={m.id} value={m.id}>{m.name} —— {m.description}</option>
                 ))}
@@ -156,17 +156,17 @@ export function Settings() {
             <div>
               <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Base URL</label>
               <input value={baseURL} onChange={(e) => setBaseURL(e.target.value)} placeholder="https://api.deepseek.com"
-                className="w-full rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+                className="w-full rounded-lg border border-border bg-input-surface px-3 py-2 text-sm outline-none focus:border-primary/50" />
             </div>
             <div>
               <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Model</label>
               <input value={modelName} onChange={(e) => setModelName(e.target.value)} placeholder="模型名称（豆包填 ep-… 接入点 ID）"
-                className="w-full rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+                className="w-full rounded-lg border border-border bg-input-surface px-3 py-2 text-sm outline-none focus:border-primary/50" />
             </div>
             <div>
               <label className="mb-1.5 block text-xs font-medium text-muted-foreground">API Key</label>
               <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-…"
-                className="w-full rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+                className="w-full rounded-lg border border-border bg-input-surface px-3 py-2 text-sm outline-none focus:border-primary/50" />
             </div>
 
             <div className="flex items-center gap-2">
@@ -194,7 +194,7 @@ export function Settings() {
         </p>
         <div className="flex items-center gap-2">
           <input type="password" value={accessKey} onChange={(e) => setAccessKey(e.target.value)} placeholder="与后端 VR_API_KEY 保持一致"
-            className="flex-1 rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+            className="flex-1 rounded-lg border border-border bg-input-surface px-3 py-2 text-sm outline-none focus:border-primary/50" />
           <button onClick={saveAccess} className="rounded-lg bg-primary/15 px-4 py-2 text-sm font-medium text-primary hover:bg-primary/25">
             保存
           </button>

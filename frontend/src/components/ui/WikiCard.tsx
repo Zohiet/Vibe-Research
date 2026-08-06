@@ -16,7 +16,7 @@ export function WikiCard({ s }: { s: WikiStockSummary }) {
       <h3 className="mb-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm font-semibold">
         <NotebookText className="h-4 w-4 text-primary" />
         你的 wiki 研究页
-        <span className="text-xs font-normal text-muted-foreground/60">
+        <span className="text-xs font-normal text-subtle">
           · 更新于 {s.updated || "—"}
           {s.sources && ` · ${s.sources} 份来源`}
         </span>
@@ -37,13 +37,13 @@ export function WikiCard({ s }: { s: WikiStockSummary }) {
       )}
 
       {s.sections.length > 0 && (
-        <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground/70">
+        <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
           <span className="text-muted-foreground">写过：</span>
           {s.sections.join(" / ")}
         </p>
       )}
 
-      <p className="mt-2 text-[10px] text-muted-foreground/50">
+      <p className="mt-2 text-[10px] text-muted-foreground">
         来自本机的投资笔记（{s.path}）· VR 只读、不会改动它
       </p>
     </GlassCard>

@@ -10,6 +10,13 @@ export default {
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
         muted: { DEFAULT: "hsl(var(--muted))", foreground: "hsl(var(--muted-foreground))" },
+        // 文字三级的第三级 + 装饰级 + 输入面（VR-GOAL-021，语义见 index.css）。
+        // ⚠️ Tailwind 对**未注册**的类名静默无效——`text-subtle` 若漏在这里注册，
+        // 元素不会报错、只会继承父级颜色，很可能"看着正常"而永远没人发现。
+        // `test_color_token_discipline.py` 里有一条专门比对这里和 .tsx 的实际用法。
+        subtle: "hsl(var(--subtle-foreground))",
+        faint: "hsl(var(--faint))",
+        "input-surface": "hsl(var(--input-surface))",
         primary: { DEFAULT: "hsl(var(--primary))", foreground: "hsl(var(--primary-foreground))" },
         accent: { DEFAULT: "hsl(var(--accent))", foreground: "hsl(var(--accent-foreground))" },
         destructive: { DEFAULT: "hsl(var(--destructive))", foreground: "hsl(var(--destructive-foreground))" },

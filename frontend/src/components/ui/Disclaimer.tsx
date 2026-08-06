@@ -4,7 +4,7 @@ import { Info } from "lucide-react";
 export function Disclaimer({ compact = false }: { compact?: boolean }) {
   if (compact) {
     return (
-      <p className="text-[11px] leading-relaxed text-muted-foreground/70">
+      <p className="text-[11px] leading-relaxed text-muted-foreground">
         Vibe-Research 只客观呈现公开数据与榜单，不推荐个股、不预测涨跌、不构成投资建议。
       </p>
     );

@@ -166,24 +166,24 @@ export function Portfolio() {
           <div>
             <label className="mb-1 block text-xs text-muted-foreground">股票代码</label>
             <input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="6 位代码"
-              className="w-28 rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+              className="w-28 rounded-lg border border-border bg-input-surface px-3 py-2 text-sm outline-none focus:border-primary/50" />
           </div>
           <div>
             <label className="mb-1 block text-xs text-muted-foreground">数量（股）</label>
             <input value={shares} onChange={(e) => setShares(e.target.value.replace(/[^\d.]/g, ""))} placeholder="如 100"
-              className="w-28 rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+              className="w-28 rounded-lg border border-border bg-input-surface px-3 py-2 text-sm outline-none focus:border-primary/50" />
           </div>
           <div>
             <label className="mb-1 block text-xs text-muted-foreground">成本价</label>
             <input value={cost} onChange={(e) => setCost(e.target.value.replace(/[^\d.-]/g, "").replace(/(?!^)-/g, ""))} placeholder="如 12.5，可负"
-              className="w-28 rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+              className="w-28 rounded-lg border border-border bg-input-surface px-3 py-2 text-sm outline-none focus:border-primary/50" />
           </div>
           <button onClick={add} disabled={adding}
             className="inline-flex items-center gap-1.5 rounded-lg bg-primary/15 px-4 py-2 text-sm font-medium text-primary shadow-glow hover:bg-primary/25 disabled:opacity-50">
             {adding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} 添加
           </button>
         </div>
-        <p className="mt-2 text-[11px] text-muted-foreground/60">同一代码再次添加会按加权平均成本合并（加仓）。</p>
+        <p className="mt-2 text-[11px] text-muted-foreground">同一代码再次添加会按加权平均成本合并（加仓）。</p>
       </GlassCard>
 
       {err && (
@@ -204,10 +204,10 @@ export function Portfolio() {
       <GlassCard glow>
         <div className="mb-2 flex items-center justify-between">
           <h3 className="font-semibold">持仓明细</h3>
-          {data?.updated && <span className="text-xs text-muted-foreground/60">更新于 {data.updated}</span>}
+          {data?.updated && <span className="text-xs text-subtle">更新于 {data.updated}</span>}
         </div>
         {holdings.length === 0 ? (
-          <p className="py-8 text-center text-sm text-muted-foreground/60">还没有持仓记录，用上面的表单添加一笔。</p>
+          <p className="py-8 text-center text-sm text-muted-foreground">还没有持仓记录，用上面的表单添加一笔。</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
