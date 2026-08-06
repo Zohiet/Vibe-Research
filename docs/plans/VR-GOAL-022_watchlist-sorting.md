@@ -1,7 +1,7 @@
 # VR-GOAL-022 实现 Plan ｜ 自选股可按涨跌与换手排序
 
 - **Goal Spec**：[`../goals/VR-GOAL-022_watchlist-sorting.md`](../goals/VR-GOAL-022_watchlist-sorting.md)
-- **确认状态**：⬜ 待确认
+- **确认状态**：✅ 已确认（2026-08-06）
 
 > **未经确认不得开始写代码。**
 
