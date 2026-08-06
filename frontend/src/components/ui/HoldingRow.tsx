@@ -69,7 +69,7 @@ export function HoldingRow({ holding: h, onAdd, onReduce, onRemove }: Props) {
       <tr className="border-b border-border/30">
         <td className="px-2 py-2.5">
           <span className="font-medium">{h.name}</span>
-          <span className="ml-1.5 font-mono text-xs text-muted-foreground/60">{h.code}</span>
+          <span className="ml-1.5 font-mono text-xs text-subtle">{h.code}</span>
         </td>
         <td className="px-2 py-2.5 font-mono">{fmtPx(h.price)}</td>
         <td className="px-2 py-2.5 font-mono text-muted-foreground">{fmt(h.shares)}</td>
@@ -92,7 +92,7 @@ export function HoldingRow({ holding: h, onAdd, onReduce, onRemove }: Props) {
             {/* 有可撤销流水时不给删除——否则「删掉 → 撤销那笔交易」会复活已删的持仓 */}
             {h.can_delete && (
               <button onClick={() => onRemove(h.code)}
-                className="text-muted-foreground/50 hover:text-destructive" title="删除">
+                className="text-faint hover:text-destructive" title="删除">
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
             )}
@@ -101,7 +101,7 @@ export function HoldingRow({ holding: h, onAdd, onReduce, onRemove }: Props) {
       </tr>
 
       {mode && (
-        <tr className="border-b border-border/30 bg-black/20">
+        <tr className="border-b border-border/30 bg-input-surface">
           <td colSpan={8} className="px-4 py-3">
             <div className="flex flex-wrap items-end gap-2">
               <span className="mr-1 text-sm font-medium text-primary">
@@ -112,7 +112,7 @@ export function HoldingRow({ holding: h, onAdd, onReduce, onRemove }: Props) {
                 <input value={shares} autoFocus
                   onChange={(e) => setShares(e.target.value.replace(/[^\d.]/g, ""))}
                   placeholder="股数"
-                  className="w-24 rounded-lg border border-border bg-black/20 px-3 py-1.5 text-sm outline-none focus:border-primary/50" />
+                  className="w-24 rounded-lg border border-border bg-input-surface px-3 py-1.5 text-sm outline-none focus:border-primary/50" />
               </div>
               <div>
                 <label className="mb-1 block text-xs text-muted-foreground">
@@ -121,13 +121,13 @@ export function HoldingRow({ holding: h, onAdd, onReduce, onRemove }: Props) {
                 <input value={price}
                   onChange={(e) => setPrice(e.target.value.replace(/[^\d.-]/g, "").replace(/(?!^)-/g, ""))}
                   placeholder={mode === "add" ? "买入价" : "卖出价"}
-                  className="w-24 rounded-lg border border-border bg-black/20 px-3 py-1.5 text-sm outline-none focus:border-primary/50" />
+                  className="w-24 rounded-lg border border-border bg-input-surface px-3 py-1.5 text-sm outline-none focus:border-primary/50" />
               </div>
               {mode === "reduce" && (
                 <div>
                   <label className="mb-1 block text-xs text-muted-foreground">日期</label>
                   <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
-                    className="rounded-lg border border-border bg-black/20 px-3 py-1.5 text-sm outline-none focus:border-primary/50" />
+                    className="rounded-lg border border-border bg-input-surface px-3 py-1.5 text-sm outline-none focus:border-primary/50" />
                 </div>
               )}
               <button onClick={submit} disabled={!valid || busy}
@@ -140,7 +140,7 @@ export function HoldingRow({ holding: h, onAdd, onReduce, onRemove }: Props) {
               </button>
             </div>
 
-            <p className="mt-2 text-[11px] text-muted-foreground/70">
+            <p className="mt-2 text-[11px] text-muted-foreground">
               当前 {fmt(h.shares)} 股 · 成本 {fmtPx(h.cost)}
               {mode === "reduce" && nShares > 0 && nPrice > 0 && (
                 <>

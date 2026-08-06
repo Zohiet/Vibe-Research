@@ -210,7 +210,7 @@ ${await extraContext.fetch()}`;
                 </div>
                 <div>
                   <p className="mb-1.5 text-xs font-medium text-muted-foreground">将随提问发给 AI 的本页上下文：</p>
-                  <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-lg bg-black/30 p-3 font-mono text-[11px] leading-relaxed text-muted-foreground">
+                  <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-lg bg-input-surface p-3 font-mono text-[11px] leading-relaxed text-muted-foreground">
 {context}
                   </pre>
                 </div>
@@ -238,7 +238,7 @@ ${await extraContext.fetch()}`;
                       )}>
                         {m.tools && m.tools.length > 0 && (
                           <div className="mb-1.5 flex flex-wrap items-center gap-1">
-                            <span className="text-[10px] text-muted-foreground/70">数据来源</span>
+                            <span className="text-[10px] text-subtle">数据来源</span>
                             {m.tools.map((t, j) => (
                               <span key={j} className="inline-flex items-center gap-0.5 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] text-primary">
                                 <Wrench className="h-2.5 w-2.5" /> {TOOL_LABEL[t.name] || t.name}{t.arg ? ` ${t.arg}` : ""}
@@ -295,7 +295,7 @@ ${await extraContext.fetch()}`;
                       onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input); } }}
                       rows={1}
                       placeholder="就本页内容提问…"
-                      className="flex-1 resize-none rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50"
+                      className="flex-1 resize-none rounded-lg border border-border bg-input-surface px-3 py-2 text-sm outline-none focus:border-primary/50"
                     />
                     <button onClick={() => send(input)} disabled={loading || !input.trim()}
                       className="rounded-lg bg-primary/15 p-2 text-primary hover:bg-primary/25 disabled:opacity-40">

@@ -115,7 +115,7 @@ export function MyReports() {
           <p className="text-sm font-medium">
             {busy ? "上传中…" : "把研报拖到这里，或点击选择文件"}
           </p>
-          <p className="text-xs text-muted-foreground/70">
+          <p className="text-xs text-muted-foreground">
             支持 PDF / Word / txt / md / 表格 / 图片，单个 ≤ 25MB，可一次多选
           </p>
           <input
@@ -142,7 +142,7 @@ export function MyReports() {
       {reports.length === 0 ? (
         <GlassCard>
           <div className="flex flex-col items-center gap-2 py-10 text-center text-sm text-muted-foreground">
-            <FolderOpen className="h-8 w-8 text-muted-foreground/40" />
+            <FolderOpen className="h-8 w-8 text-faint" />
             还没有归档的研报。把你收集的研报拖进上面的框，会自动按行业分好类。
           </div>
         </GlassCard>
@@ -160,20 +160,20 @@ export function MyReports() {
                     <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{r.name}</p>
-                      <p className="text-[11px] text-muted-foreground/60">
+                      <p className="text-[11px] text-muted-foreground">
                         {fmtSize(r.size)} · {fmtDate(r.ts)}
                       </p>
                     </div>
                     <button
                       onClick={() => download(r)}
-                      className="shrink-0 text-muted-foreground/60 hover:text-primary"
+                      className="shrink-0 text-faint hover:text-primary"
                       title="下载"
                     >
                       <Download className="h-4 w-4" />
                     </button>
                     <button
                       onClick={() => remove(r)}
-                      className="shrink-0 text-muted-foreground/50 hover:text-destructive"
+                      className="shrink-0 text-faint hover:text-destructive"
                       title="删除"
                     >
                       <Trash2 className="h-3.5 w-3.5" />

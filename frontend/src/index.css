@@ -21,7 +21,19 @@
     --accent-foreground: 222 47% 6%;
 
     --muted: 220 28% 15%;              /* surface-2 */
-    --muted-foreground: 215 18% 62%;
+    /* ── 文字三级（VR-GOAL-021）───────────────────────────────
+       正文 --foreground / 次要 --muted-foreground / 更次要 --subtle-foreground。
+       **用哪一级由「读不读」决定，不由「看起来多淡」决定**：
+         次要 ＝ 需要读的辅助信息（说明段、免责声明、空态提示、错误提示）
+         更次要 ＝ 不读也不影响使用的边角标记（时间戳、序号、股票代码、"· 报告期"后缀）
+       取值不是随手挑的，是按对比度反解出来的（次要 8:1 / 更次要 5:1 / 装饰 3:1），
+       `test_color_contrast.py` 会在这里改坏时变红。
+       ⚠️ **绝不要用透明度去调弱文字**（`text-muted-foreground/50` 那种）——
+       透明度是天花板不是刻度：亮色白卡上 /50 即使用纯黑也只有 3.98:1，永远达不到 AA。 */
+    --muted-foreground: 215 18% 68%;   /* 次要 · 对卡片 8:1 */
+    --subtle-foreground: 215 18% 54%;  /* 更次要 · 对卡片 5:1 */
+    --faint: 215 18% 40%;              /* 装饰：图标 / 占位符 —— 非文本，3:1 */
+    --input-surface: 222 40% 6%;       /* 输入控件底（取代写死的 bg-black/20） */
     --destructive: 0 72% 58%;
     --destructive-foreground: 0 0% 100%;
     --border: 210 30% 22%;             /* surface-3 边框 */
@@ -57,7 +69,11 @@
     --accent-foreground: 0 0% 100%;
 
     --muted: 210 20% 92%;
-    --muted-foreground: 215 16% 42%;
+    /* 亮色的三级（同上，取值按 --card: 0 0% 100% 反解） */
+    --muted-foreground: 215 16% 33%;   /* 次要 · 8:1 */
+    --subtle-foreground: 215 16% 45%;  /* 更次要 · 5:1 */
+    --faint: 215 16% 60%;              /* 装饰 · 3:1 */
+    --input-surface: 210 20% 96%;
     --destructive: 0 74% 55%;
     --destructive-foreground: 0 0% 100%;
     --border: 214 20% 84%;
@@ -78,6 +94,16 @@
   }
 
   * { @apply border-border; }
+
+  /* 占位文字。**此前从未设置过**——全靠 Tailwind preflight 的 gray-400
+     （VR-GOAL-021 查证：`grep placeholder:` 零命中）。占位文字也是文字，同样要够 AA。
+
+     ⚠️ **选择器必须带 `input` / `textarea`**，不能只写 `::placeholder`：
+     preflight 里写的是 `input::placeholder, textarea::placeholder`，比裸的伪元素更具体，
+     裸写法会被它悄悄盖掉。实测代价——亮色下 gray-400 压在输入框底上只有 **2.32:1**，
+     而**暗色下同一个 gray-400 是达标的**，所以只测暗色会绿得毫无意义（E2E 实际发生过）。 */
+  input::placeholder,
+  textarea::placeholder { color: hsl(var(--subtle-foreground)); opacity: 1; }
 
   body {
     @apply bg-background text-foreground;

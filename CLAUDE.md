@@ -182,6 +182,15 @@ E2E 用沙箱的 `.sandbox-data/fake-wiki`（`ci.ps1` / `dev.ps1 -Sandbox` 自�
 - 所有后端调用集中在 `src/lib/api.ts`：统一 `ApiError`、统一带 `authHeaders()`（对应后端 `VR_API_KEY`，key 存 localStorage）。带鉴权的文件下载必须走 fetch→blob，`<a download>` 带不了 Authorization。
 - **访问 localStorage 一律走 `@/lib/storage` 的 `storageGet/Set/Remove`**。隐私模式 / 嵌入式 WebView / 配额写满时 `localStorage` 会**直接抛异常**（不是返回 null），裸调一崩就是整页白屏。
 - 路径别名 `@` → `src/`。主题走 CSS 变量（`index.css`）+ Tailwind `darkMode: "class"`，玻璃暖橙风；复用 `components/ui/` 里的 `GlassCard` / `PageHeader` / `AskAiButton` / `SaveNoteButton` / `Disclaimer`，不要各页自造卡片。
+- **文字只有三级，且绝不用透明度调弱**（VR-GOAL-021）：
+  `text-foreground`（正文）/ `text-muted-foreground`（**需要读**的辅助信息：说明段、
+  免责声明、空态提示、错误提示）/ `text-subtle`（**不读也不影响使用**的边角标记：
+  时间戳、序号、股票代码、"· 报告期"后缀）。图标与占位符 `—` 用 `text-faint`（非文本，3:1）。
+  ⚠️ `text-muted-foreground/50` 那种写法**永远达不到 AA**——透明度是天花板不是刻度：
+  亮色白卡上 `/50` 即使用纯黑也只有 3.98:1。同理**不要写死调色板色**
+  （`text-sky-400` 是照暗色调的，亮色下只有 1.84:1），要么用语义 token、
+  要么配 `dark:` 变体分别给值。四条静态护栏 + 对比度测试盯着这些
+  （`backend/tests/test_color_{contrast,token_discipline}.py`）。
 - 涨跌配色沿用 A 股习惯**红涨绿跌**，全球市场板块也一样（已确认非 bug）。
 - 用户私有数据（自选股、AI key、访问 key）只存 localStorage；持仓 / 研报 / 沉淀走后端文件。
 

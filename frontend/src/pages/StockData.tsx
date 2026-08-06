@@ -60,7 +60,7 @@ function ValBand({ label, m }: { label: string; m: ValMetric }) {
   return (
     <div>
       <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-1 text-sm">
-        <span className="font-medium">{label} <span className="text-xs text-muted-foreground/60">{m.n} 点</span></span>
+        <span className="font-medium">{label} <span className="text-xs text-subtle">{m.n} 点</span></span>
         <span className="text-muted-foreground">当前 <b className="font-mono text-foreground">{m.current}</b> · 近5年 <b className={cn("font-mono", zoneColor)}>{m.percentile}%</b> 分位（<span className={zoneColor}>{zoneLabel}</span>）</span>
       </div>
       <div className="relative h-2.5 w-full overflow-hidden rounded-full">
@@ -71,7 +71,7 @@ function ValBand({ label, m }: { label: string; m: ValMetric }) {
         </div>
         <div className="absolute top-1/2 h-4 w-[3px] -translate-x-1/2 -translate-y-1/2 rounded bg-foreground shadow" style={{ left: `${cur}%` }} />
       </div>
-      <div className="mt-1 flex justify-between font-mono text-[10px] text-muted-foreground/60">
+      <div className="mt-1 flex justify-between font-mono text-[10px] text-subtle">
         <span>低 {m.min}</span><span>20% {m.p20}</span><span>中 {m.p50}</span><span>80% {m.p80}</span><span>高 {m.max}</span>
       </div>
     </div>
@@ -230,7 +230,7 @@ export function StockData() {
           onChange={(e) => setCode(e.target.value.replace(/[^a-zA-Z0-9.]/g, "").toUpperCase().slice(0, 12))}
           onKeyDown={(e) => e.key === "Enter" && run()}
           placeholder="A 股 6 位代码，或美股/港股/韩股（AAPL / 00700 / 005930.KS）"
-          className="w-80 rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50"
+          className="w-80 rounded-lg border border-border bg-input-surface px-3 py-2 text-sm outline-none focus:border-primary/50"
         />
         <button
           onClick={run}
@@ -281,9 +281,9 @@ export function StockData() {
             <GlassCard className="mb-4">
               <h3 className="mb-1 flex items-center gap-1.5 text-sm font-semibold">
                 <BarChart3 className="h-4 w-4 text-primary" /> 关键财务指标
-                <span className="text-xs font-normal text-muted-foreground/60">· {gstock.metrics.report_date}</span>
+                <span className="text-xs font-normal text-subtle">· {gstock.metrics.report_date}</span>
               </h3>
-              <p className="mb-3 text-[11px] text-muted-foreground/60">东财 GMAININDICATOR，最新报告期。金额为原生币种。</p>
+              <p className="mb-3 text-[11px] text-muted-foreground">东财 GMAININDICATOR，最新报告期。金额为原生币种。</p>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 {[
                   { k: "营业收入", v: bigMoney(gstock.metrics.revenue, gstock.market), yoy: gstock.metrics.revenue_yoy != null ? round2(gstock.metrics.revenue_yoy, "%") : "" },
@@ -304,7 +304,7 @@ export function StockData() {
             </GlassCard>
           )}
 
-          <p className="text-xs text-muted-foreground/60">
+          <p className="text-xs text-muted-foreground">
             美股 / 港股数据来自 <a href="https://github.com/simonlin1212/global-stock-data" target="_blank" rel="noreferrer" className="hover:text-primary">global-stock-data</a>（东财域内源）· 金额为原生币种 · 仅客观数据，不含买卖建议。
           </p>
         </>
@@ -349,7 +349,7 @@ export function StockData() {
           {pctl && (pctl.metrics.pe_ttm || pctl.metrics.pb) && (
             <GlassCard glow className="mb-4">
               <h3 className="mb-1 flex items-center gap-1.5 text-sm font-semibold"><LineChart className="h-4 w-4 text-primary" /> 估值历史分位 · {pctl.period}</h3>
-              <p className="mb-4 text-[11px] text-muted-foreground/60">绿=低估区 / 灰=合理区 / 红=高估区。只显示当前处于历史什么位置，不构成买卖建议。</p>
+              <p className="mb-4 text-[11px] text-muted-foreground">绿=低估区 / 灰=合理区 / 红=高估区。只显示当前处于历史什么位置，不构成买卖建议。</p>
               <div className="space-y-4">
                 {pctl.metrics.pe_ttm && <ValBand label="PE-TTM" m={pctl.metrics.pe_ttm} />}
                 {pctl.metrics.pb && <ValBand label="市净率 PB" m={pctl.metrics.pb} />}
@@ -359,8 +359,8 @@ export function StockData() {
 
           {fin && (fin.revenue || fin.roe) && (
             <GlassCard className="mb-4">
-              <h3 className="mb-1 flex items-center gap-1.5 text-sm font-semibold"><BarChart3 className="h-4 w-4 text-primary" /> 财务关键指标{fin.period && <span className="text-xs font-normal text-muted-foreground/60">· {fin.period}</span>}</h3>
-              <p className="mb-3 text-[11px] text-muted-foreground/60">同花顺财务摘要,最新报告期。</p>
+              <h3 className="mb-1 flex items-center gap-1.5 text-sm font-semibold"><BarChart3 className="h-4 w-4 text-primary" /> 财务关键指标{fin.period && <span className="text-xs font-normal text-subtle">· {fin.period}</span>}</h3>
+              <p className="mb-3 text-[11px] text-muted-foreground">同花顺财务摘要,最新报告期。</p>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 {[
                   { k: "营业总收入", v: fin.revenue, yoy: fin.revenue_yoy },
@@ -426,7 +426,7 @@ export function StockData() {
             {depNote ? (
               <p className="text-xs text-warning">{depNote}（安装后新闻/公告即可用）</p>
             ) : news.length === 0 ? (
-              <p className="text-xs text-muted-foreground/60">暂无新闻</p>
+              <p className="text-xs text-muted-foreground">暂无新闻</p>
             ) : (
               <div className="space-y-2">
                 {news.slice(0, 10).map((n, i) => (
@@ -476,7 +476,7 @@ export function StockData() {
                   </div>
                 </div>
               )}
-              <p className="mt-3 text-[11px] text-muted-foreground/60">资金/筹码为公开客观数据，仅供了解该股当前状态，不构成任何买卖建议。</p>
+              <p className="mt-3 text-[11px] text-muted-foreground">资金/筹码为公开客观数据，仅供了解该股当前状态，不构成任何买卖建议。</p>
             </GlassCard>
           )}
 
@@ -524,7 +524,7 @@ export function StockData() {
                   ))}
                 </div>
               ) : (
-                <p className="mb-2 text-xs text-muted-foreground/70">未来 90 天无待解禁。</p>
+                <p className="mb-2 text-xs text-muted-foreground">未来 90 天无待解禁。</p>
               )}
               {lockup.history.length > 0 && (
                 <div>
@@ -570,7 +570,7 @@ export function StockData() {
                   <div key={i} className="border-b border-border/40 pb-3 text-sm last:border-0">
                     <p className="text-muted-foreground"><span className="mr-1.5 rounded bg-muted/50 px-1.5 py-0.5 text-[10px]">问</span>{q.question}</p>
                     <p className="mt-1"><span className="mr-1.5 rounded bg-primary/15 px-1.5 py-0.5 text-[10px] text-primary">答</span>{q.answer}</p>
-                    <p className="mt-1 text-[11px] text-muted-foreground/60">{q.ask_time}</p>
+                    <p className="mt-1 text-[11px] text-subtle">{q.ask_time}</p>
                   </div>
                 ))}
               </div>
@@ -583,7 +583,7 @@ export function StockData() {
         <GlassCard>
           <div className="py-10 text-center text-sm text-muted-foreground">
             输入一个 6 位股票代码，拉取它的行情、估值、研报与新闻。<br />
-            <span className="text-xs text-muted-foreground/60">数据来自公开源（腾讯行情 / 东财研报 / akshare）；Vibe-Research 不预置任何标的、不做推荐。</span>
+            <span className="text-xs text-muted-foreground">数据来自公开源（腾讯行情 / 东财研报 / akshare）；Vibe-Research 不预置任何标的、不做推荐。</span>
           </div>
         </GlassCard>
       )}

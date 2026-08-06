@@ -103,7 +103,7 @@ export function Layout() {
                             collapsed ? "justify-center p-2" : "gap-2 px-2.5 py-1.5 text-[13px]",
                             sactive
                               ? "bg-primary/10 font-medium text-primary"
-                              : "text-muted-foreground/80 hover:bg-muted/40 hover:text-foreground",
+                              : "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
                           )}
                         >
                           <SIcon className="h-3.5 w-3.5 shrink-0" />
@@ -152,12 +152,12 @@ export function Layout() {
                 </div>
               </div>
               <div className="flex items-center gap-1.5 text-[11px] text-primary/80">
-                <span className="text-muted-foreground/60">联系作者</span>
+                <span className="text-muted-foreground">联系作者</span>
                 <a href={X_URL} target="_blank" rel="noreferrer" className="transition-colors hover:text-primary">X</a>
-                <span className="text-muted-foreground/40">·</span>
+                <span className="text-faint">·</span>
                 <a href={MAIL_URL} className="transition-colors hover:text-primary">Email</a>
               </div>
-              <p className="text-[11px] leading-relaxed text-muted-foreground/60">
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
                 {APP_VERSION} · 不荐股 · 不预测 · 无倾向
               </p>
             </>

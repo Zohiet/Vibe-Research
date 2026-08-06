@@ -42,7 +42,7 @@ export function Sectors() {
         ))}
       </div>
 
-      <p className="mt-4 text-center text-xs text-muted-foreground/60">
+      <p className="mt-4 text-center text-xs text-muted-foreground">
         共 {sectors.length} 个板块，其中 {hotCount} 个热门 · 环节持续实时核实补全
       </p>
       <Disclaimer />

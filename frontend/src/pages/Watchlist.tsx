@@ -103,7 +103,7 @@ export function Watchlist() {
                 <span
                   className={cn(
                     "relative inline-flex h-2 w-2 rounded-full",
-                    live ? "bg-primary" : "bg-muted-foreground/40",
+                    live ? "bg-primary" : "bg-faint",
                   )}
                 />
               </span>
@@ -134,7 +134,7 @@ export function Watchlist() {
             }}
             rows={2}
             placeholder={"如：600519 000858, 002463\n300750 688017"}
-            className="flex-1 resize-y rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50"
+            className="flex-1 resize-y rounded-lg border border-border bg-input-surface px-3 py-2 text-sm outline-none focus:border-primary/50"
           />
           <button
             onClick={add}
@@ -143,7 +143,7 @@ export function Watchlist() {
             <Plus className="h-4 w-4" /> 添加
           </button>
         </div>
-        {hint && <p className="mt-2 text-xs text-muted-foreground/70">{hint}</p>}
+        {hint && <p className="mt-2 text-xs text-muted-foreground">{hint}</p>}
       </GlassCard>
 
       <GlassCard glow>
@@ -152,7 +152,7 @@ export function Watchlist() {
             <Star className="h-4 w-4 text-primary" /> 自选总览
             <span className="text-xs font-normal text-muted-foreground">（{codes.length}）</span>
           </h3>
-          <div className="flex items-center gap-2 text-[11px] text-muted-foreground/70">
+          <div className="flex items-center gap-2 text-[11px] text-subtle">
             {error ? (
               <span className="text-warning">{error}</span>
             ) : (
@@ -180,7 +180,7 @@ export function Watchlist() {
           </div>
         </div>
         {codes.length === 0 ? (
-          <p className="py-8 text-center text-sm text-muted-foreground/60">
+          <p className="py-8 text-center text-sm text-muted-foreground">
             还没有自选股，用上面的框粘贴一串代码批量添加。
           </p>
         ) : (
@@ -210,7 +210,7 @@ export function Watchlist() {
                       <td className="px-2 py-2.5">
                         <button
                           onClick={() => remove(c)}
-                          className="text-muted-foreground/50 hover:text-destructive"
+                          className="text-faint hover:text-destructive"
                           title="移除"
                         >
                           <X className="h-3.5 w-3.5" />

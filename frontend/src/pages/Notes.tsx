@@ -15,8 +15,8 @@ const KIND_COLOR: Record<string, string> = {
   复盘: "bg-primary/15 text-primary",
   今日要点: "bg-warning/15 text-warning",
   问AI: "bg-success/15 text-success",
-  多空辩论: "bg-sky-500/15 text-sky-400",
-  反思审计: "bg-violet-500/15 text-violet-400",
+  多空辩论: "bg-sky-500/15 text-sky-700 dark:text-sky-400",
+  反思审计: "bg-violet-500/15 text-violet-700 dark:text-violet-400",
 };
 
 export function Notes() {
@@ -176,7 +176,7 @@ export function Notes() {
       ) : notes.length === 0 ? (
         <GlassCard>
           <div className="flex flex-col items-center gap-2 py-10 text-center text-sm text-muted-foreground">
-            <NotebookPen className="h-8 w-8 text-muted-foreground/40" />
+            <NotebookPen className="h-8 w-8 text-faint" />
             还没有记录。在「每日复盘」「资讯雷达」或「问 AI」里点 <b className="text-foreground">「存入沉淀」</b> 保存分析结果。
           </div>
         </GlassCard>
@@ -191,9 +191,9 @@ export function Notes() {
                     {open ? <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />}
                     <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] ${KIND_COLOR[n.kind] || "bg-muted/50 text-muted-foreground"}`}>{n.kind}</span>
                     <span className="flex-1 truncate text-sm font-medium">{n.title}</span>
-                    <span className="shrink-0 font-mono text-[11px] text-muted-foreground/60">{fmt(n.ts)}</span>
+                    <span className="shrink-0 font-mono text-[11px] text-subtle">{fmt(n.ts)}</span>
                   </button>
-                  <button onClick={() => remove(n.id)} className="shrink-0 text-muted-foreground/60 hover:text-destructive" title="删除">
+                  <button onClick={() => remove(n.id)} className="shrink-0 text-faint hover:text-destructive" title="删除">
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
@@ -217,7 +217,7 @@ export function Notes() {
                           {n.pushed ? "已投递" : pushingId === n.id ? "投递中…" : "沉淀进 wiki"}
                         </button>
                       )}
-                      <span className="text-[11px] text-muted-foreground/70">
+                      <span className="text-[11px] text-muted-foreground">
                         让 AI 回头审这段推理：哪些有数据撑着、哪些是脑补、最脆弱的一环在哪
                       </span>
                     </div>

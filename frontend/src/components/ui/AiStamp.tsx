@@ -22,7 +22,7 @@ export function AiStamp({ ts, className = "" }: { ts: number | null; className?:
   const label = stampLabel(ts);
   const stale = isStale(new Date(ts * 1000)); // 跨天了就提醒得明显一点
   return (
-    <div className={`flex items-center gap-1 text-[11px] ${stale ? "text-warning" : "text-muted-foreground/60"} ${className}`}>
+    <div className={`flex items-center gap-1 text-[11px] ${stale ? "text-warning" : "text-subtle"} ${className}`}>
       <Clock className="h-3 w-3" />
       生成于 {label}
       {stale && <span>· 数据可能已过期，需要的话重新生成一次</span>}
