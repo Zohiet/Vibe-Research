@@ -36,10 +36,23 @@ const FULL = Object.fromEntries(
   ]),
 );
 
+/**
+ * VR-GOAL-023 起，自选股页还会请求 `/api/earnings` 与 `/api/report-summary`。
+ * **不打桩这两个就会真打网络** —— 既慢，又可能触发 console error 让
+ * `console_.check()` 变红。本文件验的是排序，这两块给空对象即可。
+ */
+async function stubBrief(page: Page) {
+  for (const p of ["**/api/earnings**", "**/api/report-summary**"]) {
+    await page.route(p, (r) =>
+      r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: {} }) }));
+  }
+}
+
 async function setup(page: Page) {
   await assertSandbox(page);
   await page.route("**/api/quote**", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(FULL) }));
+  await stubBrief(page);
   // ⚠️ 这里**不要**顺手 removeItem("vr-watchlist-sort")：addInitScript 对**每次导航**
   // 都生效，包括 page.reload()，那会把刚存进去的偏好又抹掉（"刷新后还在"那条用例
   // 因此假红过一次）。而且本来就没必要——Playwright 每条用例是独立 context，
@@ -156,6 +169,7 @@ test("localStorage 里的脏排序值退回加入顺序，而不是排成一个�
   await assertSandbox(page);
   await page.route("**/api/quote**", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(FULL) }));
+  await stubBrief(page);
   const console_ = watchConsole(page);
   await page.addInitScript((cs) => {
     localStorage.setItem("vr-watchlist", JSON.stringify(cs));

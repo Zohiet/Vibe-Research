@@ -34,6 +34,18 @@ def _t(name: str, desc: str, props: dict | None = None, required: list[str] | No
     }
 
 
+# 研报喂给 AI 时保留的字段（VR-GOAL-023 决策 8）。
+#
+# **提到模块级是为了能被测试断言**——原先内联在 lambda 里，护栏够不着它。
+# `indvAimPriceT` 是机构目标价：页面已经显示了，工具再不给，同一个 AI 会在
+# 自选股页说得出目标价、一旦调本工具深挖某只反而看不到，表现得像忘了自己刚说过的话。
+# 两条路径各自都"正常工作"，这种不一致极难查。
+#
+# ⚠️ 补字段不等于放开裁剪：上游一行有 40 个字段，原始转储会烧掉大量 token
+# （见本文件头部「裁剪后再喂」）。`test_ai_outlet_discipline.py` 盯着这个上限。
+_REPORT_FIELDS = ("title", "publishDate", "orgSName", "emRatingName", "indvAimPriceT")
+
+
 def _pick(rows: list[dict], keys: tuple[str, ...] | None, limit: int) -> list[dict]:
     """取前 limit 条（控 token）；keys 为 None 时保留全部字段，只截条数。"""
     head = (rows or [])[:limit]
@@ -325,7 +337,7 @@ _HANDLERS = {
     "query_financials": lambda a: astock.financials(str(a["code"])),
     "query_company_info": _company_info,
     "query_reports": lambda a: _pick(astock.eastmoney_reports(str(a["code"]), max_pages=1),
-                                     ("title", "publishDate", "orgSName", "emRatingName"), 15),
+                                     _REPORT_FIELDS, 15),
     "query_news": lambda a: _pick(astock.stock_news(str(a["code"]), limit=15),
                                   ("新闻标题", "发布时间", "文章来源"), 15),
     "query_fund_flow": _fund_flow,

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, Outlet, useLocation } from "react-router-dom";
+import { Link, Outlet, useLocation, useMatches } from "react-router-dom";
 import {
   Activity, Radar, LayoutGrid, Wallet, Settings, Search, NotebookPen,
   Moon, Sun, ChevronsLeft, ChevronsRight, LineChart, Github, UserRound,
@@ -40,6 +40,14 @@ const SECTOR_LINKS = [
 
 export function Layout() {
   const { pathname } = useLocation();
+  // 宽屏页（VR-GOAL-023）。默认 max-w-6xl＝1152px 是**全部 12 个页面共用**的，
+  // 和显示器多大无关；自选股加到 20 列后放不下。
+  //
+  // 声明放在路由上（`handle: { wide: true }`）而不是在这里写死
+  // `pathname === "/watchlist"`：将来想让持仓页也变宽是改一行路由，
+  // 不用回来改 Layout。**正文类页面必须保持窄**——markdown 长文行宽拉到
+  // 2000px 是排版上的倒退，所以这不是全局放宽。
+  const wide = useMatches().some((m) => (m.handle as { wide?: boolean } | undefined)?.wide);
   const { dark, toggle } = useDarkMode();
   const [collapsed, setCollapsed] = useState(() => storageGet("vr-sidebar") === "collapsed");
 
@@ -167,7 +175,7 @@ export function Layout() {
 
       {/* Main */}
       <main className="flex-1 overflow-auto">
-        <div className="mx-auto max-w-6xl px-6 py-6">
+        <div className={cn("mx-auto px-6 py-6", wide ? "max-w-[1800px]" : "max-w-6xl")}>
           <Outlet />
         </div>
       </main>

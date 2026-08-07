@@ -13,7 +13,7 @@ import json
 import os
 import re
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta as _timedelta
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -707,6 +707,95 @@ def reports(code: str = Query(...), pages: int = Query(2, ge=1, le=5)):
         return {"data": rows}
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"研报源异常：{e}") from e
+
+
+# ── 自选股一屏所需的财报与研报聚合（VR-GOAL-023）────────────────────────────
+#
+# 两个端点而不是一个：**为了独立降级**。研报源挂了，财报五列照常显示。
+# 都按 `/api/quote` 的约定：`codes` 逗号分隔、返回 {code: {...}}。
+#
+# ⚠️ 缓存**按单只 code 存**，不按 codes 组合 —— 否则用户往自选里加一只，
+#    整批全部 miss、上游全部重打一遍。
+
+_EARNINGS_CACHE: dict = {}
+_RSUM_CACHE: dict = {}
+_BRIEF_TTL = 1800          # 30 分钟。批量调用实测 0.26s，缓存更久省不下什么，
+                           # 而财报季当天出的半年报晚半小时看到够了、晚 6 小时不行。
+_MAX_CODES = 100
+
+
+def _validate_codes(codes: str) -> list[str]:
+    lst = [c.strip() for c in (codes or "").split(",") if c.strip()]
+    if not lst or any(not c.isdigit() or len(c) != 6 for c in lst):
+        raise HTTPException(400, "codes 必须是逗号分隔的 6 位数字")
+    if len(lst) > _MAX_CODES:
+        # 静默截断会让「自选 120 只，表格少了一半」变成一个查不出原因的现象。
+        raise HTTPException(400, f"codes 最多 {_MAX_CODES} 个，收到 {len(lst)} 个")
+    return lst
+
+
+@app.get("/api/earnings")
+def earnings(codes: str = Query(..., description="逗号分隔的 6 位代码")):
+    """多只股票各自最新一期业绩报表（含**发布日**）。一次上游请求查全部。
+
+    与 `/api/financials` 的区别：那条走 akshare（逐只、慢、缺依赖 501），
+    且只有报告期没有发布日。本条走 `em_get`，无额外依赖。
+    """
+    lst = _validate_codes(codes)
+    now = _time.time()
+    out: dict = {}
+    miss: list[str] = []
+    for c in lst:
+        hit = _EARNINGS_CACHE.get(c)
+        if hit and now - hit[0] < _BRIEF_TTL:
+            if hit[1] is not None:
+                out[c] = hit[1]
+        else:
+            miss.append(c)
+    if miss:
+        try:
+            fresh = astock.batch_earnings(miss)
+        except Exception as e:  # noqa: BLE001 — 边界统一兜底
+            raise HTTPException(502, f"业绩报表源异常：{e}") from e
+        for c in miss:
+            # 连"这只没有业绩报表"也缓存（存 None），否则每次请求都为它重打上游。
+            _EARNINGS_CACHE[c] = (now, fresh.get(c))
+            if c in fresh:
+                out[c] = fresh[c]
+    return {"data": out}
+
+
+@app.get("/api/report-summary")
+def report_summary(codes: str = Query(..., description="逗号分隔的 6 位代码")):
+    """近半年研报聚合：篇数 / 覆盖机构 / 评级计数 / 目标价区间 / 最新日期。
+
+    聚合在后端做：上游一条研报有 40 个字段，茅台近半年 32 篇——原样吐给前端
+    是几百 KB，违反 `tools.py` 头部那条「裁剪后再喂」。
+    """
+    lst = _validate_codes(codes)
+    now = _time.time()
+    begin = (datetime.now().date()
+             - _timedelta(days=astock.REPORT_WINDOW_DAYS)).isoformat()
+    out: dict = {}
+    errors: list[str] = []
+    for c in lst:
+        hit = _RSUM_CACHE.get(c)
+        if hit and now - hit[0] < _BRIEF_TTL:
+            out[c] = hit[1]
+            continue
+        try:
+            rows = astock.eastmoney_reports(c, max_pages=1, begin_time=begin)
+        except Exception as e:  # noqa: BLE001
+            # 单只失败就跳过它（前端显示 —），不拖累其余 —— 但全军覆没时要报错，
+            # 否则"源挂了"会被渲染成"所有股票都没有研报"，那是说谎。
+            errors.append(f"{c}: {e}")
+            continue
+        s = astock.summarize_reports(rows)
+        _RSUM_CACHE[c] = (now, s)
+        out[c] = s
+    if errors and not out:
+        raise HTTPException(502, f"研报源异常：{errors[0]}")
+    return {"data": out}
 
 
 _NEWS_CACHE: dict = {}

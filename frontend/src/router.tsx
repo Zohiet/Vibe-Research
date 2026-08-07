@@ -24,7 +24,9 @@ export const router = createBrowserRouter([
       { path: "/portfolio", element: <Portfolio /> },
       { path: "/stock-data", element: <StockData /> },
       { path: "/debate", element: <Debate /> },
-      { path: "/watchlist", element: <Watchlist /> },
+      // wide：自选股是全站唯一的宽表页（20 列），容器放宽到 1800px。
+      // 见 Layout.tsx 里 `useMatches` 那段——**别改成全局放宽**，正文类页面要保持窄。
+      { path: "/watchlist", element: <Watchlist />, handle: { wide: true } },
       { path: "/my-reports", element: <MyReports /> },
       { path: "/notes", element: <Notes /> },
       { path: "/settings", element: <Settings /> },
