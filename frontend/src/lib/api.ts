@@ -130,6 +130,35 @@ export interface Report {
   emRatingName?: string; indvInduName?: string; pdfUrl?: string | null;
 }
 
+// ── 自选股一屏所需的财报与研报聚合（VR-GOAL-023）──────────────────────────
+//
+// 每个数值字段都可能是 null，**而 null 与 0 含义不同**：null = 上游没披露，
+// 0 = 确实是 0。界面必须分别渲染成 `—` 和 `0`（VR-GOAL-014）。
+export interface Earnings {
+  period: string | null;        // 报告期，如 2026-03-31
+  notice_date: string | null;   // **发布日** —— 用户问的「最新财报什么时候发的」是这个
+  quarter: string | null;       // 期次，如 2026Q1
+  revenue_yoy: number | null;
+  profit_yoy: number | null;
+  roe: number | null;
+  gross_margin: number | null;
+}
+
+export interface TargetPrice {
+  low: number; high: number;
+  org_count: number;            // **给价机构数**，不是带目标价的篇数（两者能差 3 倍）
+  latest_date: string | null;
+  stale: boolean;               // 超 90 天 —— 旧观点，界面弱化显示
+}
+
+export interface ReportSummary {
+  count: number;                // 篇数
+  org_count: number;            // 覆盖机构数（去重）
+  ratings: Record<string, number>;  // 键是上游评级名（「持有」已并入「中性」）
+  latest_date: string | null;
+  target: TargetPrice | null;   // null = 没有任何机构给过目标价（实测是常态）
+}
+
 export interface ValMetric {
   current: number; percentile: number; min: number; max: number;
   p20: number; p50: number; p80: number; n: number;
@@ -326,6 +355,10 @@ export const api = {
   announcements: (code: string, force = false) =>
     get<Announcement[]>(`/announcements?code=${code}${force ? "&force=1" : ""}`),
   quote: (codes: string) => get<Record<string, Quote>>(`/quote?codes=${codes}`),
+  // 取不到的 code **不会出现在返回里**（后端约定），前端只需判断"键在不在"。
+  earnings: (codes: string) => get<Record<string, Earnings>>(`/earnings?codes=${codes}`),
+  reportSummary: (codes: string) =>
+    get<Record<string, ReportSummary>>(`/report-summary?codes=${codes}`),
   reports: (code: string) => get<Report[]>(`/reports?code=${code}`),
   news: (code: string, force = false) =>
     get<NewsItem[]>(`/news?code=${code}${force ? "&force=1" : ""}`),

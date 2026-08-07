@@ -128,15 +128,20 @@ def _report_session():
     return s
 
 
-def eastmoney_reports(code: str, max_pages: int = 3) -> list[dict]:
-    """按个股代码拉研报列表（qType=0）。"""
+def eastmoney_reports(code: str, max_pages: int = 3, begin_time: str = "2000-01-01") -> list[dict]:
+    """按个股代码拉研报列表（qType=0）。
+
+    `begin_time` 带默认值，两个既有调用方（`app.py` 的 `/api/reports`、
+    `tools.py` 的 `query_reports`）行为不变；`/api/report-summary` 用它把窗口
+    收窄到近半年，避免为了算「近半年 N 篇」而把 2000 年至今全拉一遍。
+    """
     session = _report_session()
     out: list[dict] = []
     for page in range(1, max_pages + 1):
         params = {
             "industryCode": "*", "pageSize": "100", "industry": "*",
             "rating": "*", "ratingChange": "*",
-            "beginTime": "2000-01-01", "endTime": "2030-01-01",
+            "beginTime": begin_time, "endTime": "2030-01-01",
             "pageNo": str(page), "fields": "", "qType": "0",
             "orgCode": "", "code": code, "rcode": "",
             "p": str(page), "pageNum": str(page), "pageNumber": str(page),
@@ -182,6 +187,119 @@ def eastmoney_industry_reports(keywords: list[str] | None = None, days: int = 90
 
 def pdf_url(info_code: str) -> str:
     return _PDF_TPL.format(info_code=info_code)
+
+
+# ---------------------------------------------------------------------------
+# 研报聚合（VR-GOAL-023）—— 纯函数，不发请求
+# ---------------------------------------------------------------------------
+
+REPORT_WINDOW_DAYS = 180        # 「近半年」全项目取同一个值
+TARGET_STALE_DAYS = 90          # 目标价超过这个天数算旧观点，界面弱化显示
+
+# 东财同时会给「持有」和「中性」，语义重叠 —— 合并成一类，否则界面要多一列表达同一件事。
+# **这是唯一一处归并**，其余评级名原样计数（包括券商自定义的「跑赢行业」之类），
+# 否则三个已知桶加起来 < 篇数，用户看到对不上却找不到原因。
+_RATING_ALIAS = {"持有": "中性"}
+
+
+def _num(v) -> float | None:
+    """把上游的脏值转成数或 None。**None 绝不能变成 0**（VR-GOAL-014）。"""
+    if v is None:
+        return None
+    s = str(v).strip().replace(",", "")
+    if not s or s in ("-", "--", "false", "False", "None"):
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _pub_date(row: dict) -> str:
+    """研报发布日，取不到时返回空串（排序时自然最旧）。"""
+    d = str(row.get("publishDate") or "")[:10]
+    return d if len(d) == 10 else ""
+
+
+def summarize_reports(rows: list[dict] | None, today=None) -> dict:
+    """近 N 天研报聚合 —— **纯函数**：吃研报列表，吐聚合结果，不发任何请求。
+
+    这样写是为了让最容易错的三条规则能在离线单测里穷举断言
+    （见 `tests/test_report_summary.py`）：
+
+    1. **目标价必须按机构去重、每家取最新一篇。** 实测宁德时代近半年 9 篇带目标价
+       其实只来自 3 家（东吴一家发了 4 篇），按篇统计会把「9 家给了目标价」这种
+       假共识摆到界面上；更糟的是机构自行下修后（茅台的群益 1525→1430），
+       它已经不认的旧值还留在区间里。
+    2. **0 篇不是缺失。** 「近半年确实没有研报」是事实，要能和「取不到」区分。
+    3. **陈旧要标出来。** 绿的谐波唯一那篇目标价 238、现价 348，而报告是 4 个月前的
+       —— 日期不显示、不标旧，这一格就是在说谎。
+
+    返回 `target` 为 None 表示没有任何机构给过目标价（实测 8 只样本里 4 只如此，
+    是常态不是异常），**不许拿 0 或空区间糊上去**。
+    """
+    from collections import Counter
+    from datetime import date as _date
+
+    today = today or _date.today()
+    rows = rows or []
+
+    ratings: Counter = Counter()
+    dates: list[str] = []
+    org_keys: set = set()
+
+    # 机构名缺失时不能与别家混为一谈 —— 合并成一家会凭空制造「这家改了主意」的假象。
+    def _org_key(i: int, r: dict) -> str:
+        return (r.get("orgSName") or "").strip() or f"__anon_{i}"
+
+    target_by_org: dict[str, tuple[str, float, float]] = {}
+
+    for i, r in enumerate(rows):
+        org_keys.add(_org_key(i, r))
+
+        name = (r.get("emRatingName") or "").strip()
+        if name:
+            ratings[_RATING_ALIAS.get(name, name)] += 1
+
+        d = _pub_date(r)
+        if d:
+            dates.append(d)
+
+        hi, lo = _num(r.get("indvAimPriceT")), _num(r.get("indvAimPriceL"))
+        # 0 和 None 都算「没填」——实测大量记录 indvAimPriceL 为 0，
+        # 那不是「目标价 0 元」。
+        if not hi and not lo:
+            continue
+        hi, lo = hi or lo, lo or hi
+        if lo > hi:
+            lo, hi = hi, lo
+        key = _org_key(i, r)
+        cur = target_by_org.get(key)
+        if cur is None or d >= cur[0]:
+            target_by_org[key] = (d, lo, hi)
+
+    target = None
+    if target_by_org:
+        picked = list(target_by_org.values())
+        latest = max(p[0] for p in picked)
+        stale = False
+        if latest:
+            stale = (today - _date.fromisoformat(latest)).days > TARGET_STALE_DAYS
+        target = {
+            "low": min(p[1] for p in picked),
+            "high": max(p[2] for p in picked),
+            "org_count": len(picked),
+            "latest_date": latest or None,
+            "stale": stale,
+        }
+
+    return {
+        "count": len(rows),
+        "org_count": len(org_keys),
+        "ratings": dict(ratings),
+        "latest_date": max(dates) if dates else None,
+        "target": target,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -577,6 +695,70 @@ def em_post(url: str, params: dict | None = None, headers: dict | None = None,
             timeout: int = 15, json=None, data=None):
     """东财 POST 入口。与 `em_get` 共用限流队列与直连/代理探测结果，语义完全一致。"""
     return _em_request("post", url, params, headers, timeout, json=json, data=data)
+
+
+# ---------------------------------------------------------------------------
+# 业绩报表（VR-GOAL-023）—— 东财 datacenter，**一次请求查多只**
+# ---------------------------------------------------------------------------
+
+_EARNINGS_API = "https://datacenter-web.eastmoney.com/api/data/v1/get"
+_EARNINGS_COLUMNS = (
+    "SECURITY_CODE,REPORTDATE,NOTICE_DATE,QDATE,YSTZ,SJLTZ,WEIGHTAVG_ROE,XSMLL"
+)
+
+
+def _parse_earnings_row(row: dict) -> dict:
+    """业绩报表一行 → 界面要的七个字段。**纯函数**，边界见 `tests/test_earnings_parse.py`。
+
+    ⚠️ `NOTICE_DATE` 才是「财报发布时间」；`REPORTDATE` 是报告期，两者能差一个月。
+    用户问的是前者（"最新财报什么时候发的"），而现有 `financials()` 只有后者
+    —— 这正是本 Goal 换数据源的直接原因。
+    """
+    def _d(k):
+        s = str(row.get(k) or "")[:10]
+        return s if len(s) == 10 else None
+
+    def _n(k):
+        v = _num(row.get(k))
+        return None if v is None else round(v, 2)
+
+    return {
+        "period": _d("REPORTDATE"),
+        "notice_date": _d("NOTICE_DATE"),
+        "quarter": row.get("QDATE") or None,
+        "revenue_yoy": _n("YSTZ"),
+        "profit_yoy": _n("SJLTZ"),
+        "roe": _n("WEIGHTAVG_ROE"),
+        "gross_margin": _n("XSMLL"),
+    }
+
+
+def batch_earnings(codes: list[str]) -> dict[str, dict]:
+    """多只股票各自最新一期业绩报表 —— **一次请求查全部**（实测 5 只 0.26s）。
+
+    比现有 `financials()` 好在三处：不需要 akshare（不会 501）、带发布日、能批量。
+    `ISNEW="1"` 保证每只只回最新一期。
+
+    **取不到的 code 直接不出现在返回里**，不塞空对象 —— 让前端只有一处判断。
+    """
+    codes = [c for c in (codes or []) if c]
+    if not codes:
+        return {}
+    quoted = ",".join(f'"{c}"' for c in codes)
+    r = em_get(_EARNINGS_API, {
+        "sortColumns": "NOTICE_DATE", "sortTypes": "-1",
+        "pageSize": str(min(max(len(codes), 50), 500)), "pageNumber": "1",
+        "reportName": "RPT_LICO_FN_CPD",
+        "columns": _EARNINGS_COLUMNS,
+        "filter": f'(SECURITY_CODE in ({quoted}))(ISNEW="1")',
+    }, timeout=20)
+    rows = ((r.json() or {}).get("result") or {}).get("data") or []
+    out: dict[str, dict] = {}
+    for row in rows:
+        code = str(row.get("SECURITY_CODE") or "")
+        if code:
+            out[code] = _parse_earnings_row(row)
+    return out
 
 
 # ---------------------------------------------------------------------------

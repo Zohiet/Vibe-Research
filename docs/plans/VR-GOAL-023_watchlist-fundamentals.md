@@ -2,7 +2,7 @@
 
 - **Goal Spec**：[`../goals/VR-GOAL-023_watchlist-fundamentals.md`](../goals/VR-GOAL-023_watchlist-fundamentals.md)
 - **设计文档**：[`../superpowers/specs/2026-08-07-watchlist-fundamentals-design.md`](../superpowers/specs/2026-08-07-watchlist-fundamentals-design.md)
-- **确认状态**：⬜ 待确认
+- **确认状态**：✅ 已确认（2026-08-07）
 
 > **未经确认不得开始写代码。**
 
