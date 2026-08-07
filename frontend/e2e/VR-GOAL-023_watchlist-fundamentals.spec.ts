@@ -133,8 +133,9 @@ test("验收项1+2 · 财报五列与研报七列都出现且有值", async ({ p
   await expect(await cellByHeader(page, "甲", "目标价")).toContainText("1430–1865");
   await expect(await cellByHeader(page, "甲", "目标价")).toContainText("4家");
 
-  await shot(page, GOAL, "01_财报五列");
-  await shot(page, GOAL, "02_研报聚合列");
+  // 验收项 1 与 2 是同一屏上的两组列，**一张图就够**——
+  // 截两张一模一样的图不是"两条证据"，是凑数。
+  await shot(page, GOAL, "01_财报五列与研报七列");
   console_.check();
 });
 

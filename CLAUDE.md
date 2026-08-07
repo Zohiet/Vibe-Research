@@ -74,7 +74,9 @@ portfolio / myreports / myaccumulation (本地用户数据)      cli_runtime.py 
                           ↑ 全部经 app.py (FastAPI :8900) 出 HTTP
 ```
 
-- **`tools.py` 是唯一的工具真相源**：`chat.py` / `mcp_server.py` / `debate.py` 都从这里取 `TOOLS` + `exec_tool`（`chat.TOOLS = tools.TOOLS` 只是别名）。**新增工具只改 `tools.py` 一处**，四个出口同时生效。
+- **`tools.py` 是唯一的工具真相源**：`chat.py` / `mcp_server.py` / `debate.py` 都从这里取 `TOOLS` + `exec_tool`（`chat.TOOLS = tools.TOOLS` 只是别名）。**新增工具只改 `tools.py` 一处**，这**三条**出口同时生效。
+  （`reflection.py` 走 `chat._call_llm_stream(..., use_tools=False)`，**不调工具**——
+  这里曾写作「四个出口」，VR-GOAL-023 核查调用方时纠正。）
 - 工具层三条设计原则写在 `tools.py` 头部，改的时候要守：只给客观数据；**裁剪后再喂**（取最近 N 条 + 关键字段 + 汇总，别原始转储烧 token）；**失败不抛**（异常转 `{"error": ...}` 回喂，让模型换个工具继续）。
 - `chat.SYSTEM_PROMPT` 里焊死了 `ANALYSIS_FRAMEWORK`（估值 / 资金面 / 财报质量 / 行业景气 / 事件催化与风险 五维）与合规红线，不做成 UI 选项。
 - **`debate.py` 刻意不做 trader / portfolio_manager 那一层**（区别于 TradingAgents、ai-hedge-fund 这类框架）。产物是「双方在哪儿分歧、各自要什么证据才能被证伪」，不是买卖结论。改这块务必读它的文件头注释——多视角本身就是产品，不是通往建议的中间步骤。它先由后端拉「事实底稿」（不经 LLM、固定清单），保证多空吵的是同一份数据。
@@ -192,6 +194,12 @@ E2E 用沙箱的 `.sandbox-data/fake-wiki`（`ci.ps1` / `dev.ps1 -Sandbox` 自�
   要么配 `dark:` 变体分别给值。四条静态护栏 + 对比度测试盯着这些
   （`backend/tests/test_color_{contrast,token_discipline}.py`）。
 - 涨跌配色沿用 A 股习惯**红涨绿跌**，全球市场板块也一样（已确认非 bug）。
+  **只用于价格**——财务同比不上色，理由见「必须守的红线」。
+- **页面宽度默认锁在 `max-w-6xl`（1152px），与显示器多大无关**（`Layout.tsx`，12 页共用）。
+  要放宽某一页，在 `router.tsx` 给它加 `handle: { wide: true }`（→ 1800px），
+  别在 Layout 里按 `pathname` 写死。目前只有自选股页是宽的。
+  ⚠️ **不要全局放宽**：研究记录 / 每日复盘 / 多空辩论里都是 markdown 长文，
+  行宽拉到 2000px 是排版上的倒退。「表格类页宽、正文类页窄」的全局分道另有待办。
 - 用户私有数据（自选股、AI key、访问 key）只存 localStorage；持仓 / 研报 / 沉淀走后端文件。
 
 ### git 与远程
@@ -271,6 +279,15 @@ E2E 用沙箱的 `.sandbox-data/fake-wiki`（`ci.ps1` / `dev.ps1 -Sandbox` 自�
 ## 必须守的红线
 
 - **合规**：只呈现客观公开数据。不荐股、不预测涨跌、不给买卖时机、不承诺收益、不做主观评分排名。UI 不出现买卖按钮；估值历史分位只标位置、不划买卖线。新增端点 / 提示词 / 文案都按这条审。
+- **机构目标价（VR-GOAL-023 定的口径，是上一条的一处明确例外）**：可以**按原样转述**机构给的目标价，
+  但必须**按机构去重**（同一家半年内发多篇只取最新，实测宁德 9 篇带目标价其实只来自 3 家）、
+  必须标明**给价机构数与日期**、超 90 天的要弱化显示。
+  **VR 自己不推算目标价，也不计算它相对现价的涨跌空间**——那个数没有任何机构说过。
+  口径同时写在三处、缺一处就会漂移：本文件、`chat.SYSTEM_PROMPT`（**运行时真正生效的那份**）、
+  `tests/test_ai_outlet_discipline.py`（防被无声删掉）。
+  ⚠️ 目标价经 `tools.py` 流向 MCP 出口，而 **MCP 没有 `SYSTEM_PROMPT` 约束**（提示词由对接的宿主提供）。
+- **财务数字不上涨跌色**：红绿在 A 股是**价格方向**的约定编码。借给净利同比之类会被读成
+  「红＝好、绿＝差」，那就是 VR 在替财报下评价，撞上面那条「不做主观评分」。
 - **打板原始池**（`astock.em_zt_topic_pool`）含个股 code/name，**仅供 `market.py` 聚合成不含个股名的情绪指标**（封板率 / 炸板率 / 连板梯队等）。切勿把原始池直接接成 API 或 UI。例外是已有的「成交额 TOP20」等客观公开榜单。
 - **私有文档不进仓库**：`.gitignore` 顶部三份内部规划文档（`VibeResearch-开发日志.md` 等）含变现策略与私有打法，提交前务必 `git status` 确认看不到它们。用户数据（持仓 / 关注股 / 研报 / key）同理。
 
