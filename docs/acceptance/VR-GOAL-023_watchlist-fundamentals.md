@@ -88,8 +88,8 @@
 
 ## CI（独立证据）
 
-**GitHub Actions run**：https://github.com/Zohiet/Vibe-Research/actions/runs/31170034889
-（`82f22df` on `goal/VR-GOAL-023_watchlist-fundamentals`，`completed / success`）
+**GitHub Actions run**：https://github.com/Zohiet/Vibe-Research/actions/runs/31170573264
+（`bd1cee6` on `goal/VR-GOAL-023_watchlist-fundamentals`，`completed / success`）
 
 本机 `./ci.ps1 -E2E`（辅助，自述性质）：
 
@@ -157,6 +157,7 @@ $ git diff --stat dev...HEAD
 | `00ea9b8` | 实现 Plan（待确认） |
 | `38748c8` | 后端两端点 + 两纯函数、前端 12 列 + 宽容器、AI 出口口径 |
 | `82f22df` | `CLAUDE.md` 合规口径 + 验收截图 |
+| `bd1cee6` | 修正排序截图的拍摄时机（原图与文件名对不上） |
 
 ## diff 复查
 
