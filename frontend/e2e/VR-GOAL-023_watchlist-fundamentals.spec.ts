@@ -210,6 +210,9 @@ test("验收项6 · 按净利同比排序，缺该列数据的沉底；目标价
   await expect(th(page, "净利同比")).toHaveAttribute("aria-sort", "descending");
   // 丙 61.17 > 乙 42.0 > 甲 1.47；丁没有财报数据 → 沉底
   expect(await rowNames(page)).toEqual(["丙", "乙", "甲", "丁"]);
+  // ⚠️ 截图必须在**这里**拍，不能等到用例末尾——那时表格已经按「发布日」排过了，
+  // 截出来的图和文件名对不上。文件名要直接说清它证明的是哪一条。
+  await shot(page, GOAL, "04_按净利同比排序");
 
   await th(page, "净利同比").getByRole("button").click();
   await expect(th(page, "净利同比")).toHaveAttribute("aria-sort", "ascending");
@@ -231,7 +234,6 @@ test("验收项6 · 按净利同比排序，缺该列数据的沉底；目标价
   await expect(th(page, "发布日")).toHaveAttribute("aria-sort", "descending");
   expect(await rowNames(page)).toEqual(["乙", "甲", "丙", "丁"]);
 
-  await shot(page, GOAL, "04_按净利同比排序");
   console_.check();
 });
 
