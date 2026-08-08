@@ -9,7 +9,7 @@ import { useLiveQuotes, isTradingHours } from "@/hooks/useLiveQuotes";
 import { useWatchlistBrief } from "@/hooks/useWatchlistBrief";
 import { storageGet, storageSet, storageRemove } from "@/lib/storage";
 import { cn } from "@/lib/utils";
-import type { Earnings, NextEarnings, Quote, ReportSummary, TargetPrice } from "@/lib/api";
+import type { Consensus, Earnings, NextEarnings, Quote, ReportSummary, TargetPrice } from "@/lib/api";
 
 // A 股红涨绿跌（与整个看板一致）。
 // ⚠️ **只用于价格涨跌**。财务同比刻意不上色（VR-GOAL-023 决策 11）：红绿在 A 股是
@@ -67,6 +67,26 @@ const fmtTarget = (t: TargetPrice) => {
   return `${range} · ${t.org_count}家${t.latest_date ? ` · ${fmtMD(t.latest_date)}` : ""}`;
 };
 
+/**
+ * 前向 PE ＝ 现价 ÷ 机构一致预期 EPS。
+ *
+ * ⚠️ **这个数是 VR 算的，不是机构给的**——表头必须标明算法（`FORWARD_PE_HINT`）。
+ * 它与 VR-GOAL-023 否掉的「隐含涨跌空间」性质不同：前向 PE 是**估值水平**
+ * （状态描述），隐含空间是**收益预期**（对未来回报的陈述）。见 027 决策 4。
+ *
+ * ⚠️ **后端 `astock.forward_pe` 有一份等价实现**（供单测），这里是它的镜像。
+ * 两份可能漂——同一组数值在 pytest 与 E2E 里各断言一次盯住（027 Plan 风险一节）。
+ */
+const forwardPe = (price: number | undefined, eps: number | undefined) =>
+  !price || price <= 0 || !eps || eps <= 0 ? null : Math.round((price / eps) * 10) / 10;
+
+// 表头挂说明的列。**必须能和排序按钮共存**——前向 PE 是可排序列，
+// 而表头渲染的三分支里 `col.sort` 在最前面，早期实现让它走了按钮那一支、
+// 根本到不了挂说明的分支（E2E 抓到的）。
+const FORWARD_PE_HINT =
+  "按现价 ÷ 机构一致预期 EPS 计算，年度为最早的预测年度、家数为覆盖机构数。" +
+  "EPS 是机构给的，这个比值是 VR 算的；VR 不据此评价贵贱、也不推算涨跌空间。";
+
 const dateNum = (d: string | null | undefined) =>
   d ? Number(d.replace(/-/g, "")) : null;
 
@@ -112,6 +132,8 @@ interface Data {
   reports: Record<string, ReportSummary>;
   /** ⚠️ 值为 `null` ＝ 没有下次预约（「待公布」）；**键不存在** ＝ 取不到（`—`）。两者不同。 */
   next: Record<string, NextEarnings | null>;
+  /** ⚠️ 同上：值为 `null` ＝ 没有一致预期覆盖。 */
+  consensus: Record<string, Consensus | null>;
 }
 
 interface Col {
@@ -121,7 +143,7 @@ interface Col {
   sort?: (c: string, d: Data) => number | null;
   render: (c: string, d: Data) => ReactNode;
   /** 该列所属数据块，用于三态渲染里判断"是否还在加载"。 */
-  src?: "e" | "r" | "n";
+  src?: "e" | "r" | "n" | "c";
   cls?: string;
   /** 组的第一列，画一条竖分隔。 */
   groupStart?: boolean;
@@ -135,6 +157,9 @@ const TARGET_HINT =
   "机构原话，按机构去重后取每家最新一篇。已标明给价机构数与日期；" +
   "超 90 天的以弱色显示。VR 不自行推算目标价，也不计算它相对现价的涨跌空间。";
 
+/** 需要在表头挂算法/口径说明的列。见 `TARGET_HINT` / `FORWARD_PE_HINT`。 */
+const HINT: Record<string, string> = { target: TARGET_HINT, fwd_pe: FORWARD_PE_HINT };
+
 const GROUPS: { label: string; span: number }[] = [
   { label: "", span: 2 },
   { label: "行情", span: 5 },
@@ -143,6 +168,9 @@ const GROUPS: { label: string; span: number }[] = [
   // 塞进一个描述**另一期**的列，读者立刻要问「营收同比是上次的还是下次的」。
   { label: "下次财报", span: 1 },
   { label: "近半年研报", span: 7 },
+  // 第三个数据源（东财一致预期表），与「近半年研报」的原始研报聚合不同源，
+  // 单独成组免得读者以为同源（VR-GOAL-027）。
+  { label: "一致预期", span: 1 },
   { label: "", span: 1 },
 ];
 
@@ -259,6 +287,30 @@ const COLUMNS: Col[] = [
     sort: (c, d) => dateNum(d.reports[c]?.latest_date),
     render: (c, d) => fmtMD(d.reports[c]?.latest_date ?? null) ?? FAINT },
 
+  // ── 一致预期（VR-GOAL-027）──
+  { key: "fwd_pe", label: "前向PE", groupStart: true, src: "c", cls: "font-mono whitespace-nowrap",
+    sort: (c, d) => {
+      const k = d.consensus[c];
+      return k && !k.stale ? forwardPe(d.quotes[c]?.price, k.eps) : null;
+    },
+    render: (c, d) => {
+      if (!(c in d.consensus)) return FAINT;                 // 取不到
+      const k = d.consensus[c];
+      if (!k) return <span className="text-subtle">无覆盖</span>;
+      // 年度落后 → 上游多半停更了。**不静默展示旧年度的预期**（027 决策：
+      // 这张表没有日期字段，年度是唯一的新鲜度信号）。
+      if (k.stale) return <span className="text-subtle" title={`最新预测年度仍是 ${k.year}，多半已停更`}>已过期</span>;
+      const pe = forwardPe(d.quotes[c]?.price, k.eps);
+      if (pe == null) return FAINT;
+      return (
+        <span title={`${k.year} 年预期 EPS ${k.eps}，覆盖 ${k.org_count} 家`}>
+          <span className="text-subtle">{String(k.year).slice(2)}E </span>
+          {pe}
+          <span className="text-subtle"> · {k.org_count}家</span>
+        </span>
+      );
+    } },
+
   { key: "_remove", label: "", render: () => null },
 ];
 
@@ -312,6 +364,7 @@ export function Watchlist() {
 
   const data: Data = {
     quotes, earnings: brief.earnings, reports: brief.reports, next: brief.next,
+    consensus: brief.consensus,
   };
 
   const toggleSort = (key: string) => {
@@ -340,7 +393,7 @@ export function Watchlist() {
     has.sort((a, b) => sign * (vals.get(a)! - vals.get(b)!));
     return [...has, ...missing];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [codes, quotes, brief.earnings, brief.reports, brief.next, sort]);
+  }, [codes, quotes, brief.earnings, brief.reports, brief.next, brief.consensus, sort]);
 
   const toggleLive = () => {
     setLive((on) => {
@@ -405,7 +458,7 @@ export function Watchlist() {
       "\n\n注：评级分布主要反映覆盖热度——A 股卖方极少出具减持/卖出评级。" +
       "目标价为机构原话，已标明给价机构数与日期。"
     );
-  }, [codes, quotes, brief.earnings, brief.reports, brief.next]);
+  }, [codes, quotes, brief.earnings, brief.reports, brief.next, brief.consensus]);
 
   const sortedCol = sort && COLUMNS.find((c) => c.key === sort.key);
 
@@ -516,11 +569,12 @@ export function Watchlist() {
 
         {/* 某一块数据源挂了：说明是哪一块不可用，表格其余列照常。
             **副功能不许干掉自选股页**（照 wikipush 的「失败不抛，降级成原因」）。 */}
-        {(brief.earningsError || brief.reportsError || brief.nextError) && (
+        {(brief.earningsError || brief.reportsError || brief.nextError || brief.consensusError) && (
           <p className="mb-2 rounded-lg border border-warning/30 bg-warning/5 px-3 py-2 text-xs text-muted-foreground">
             {brief.earningsError && <span>财报数据暂不可用（{brief.earningsError}）。</span>}
             {brief.reportsError && <span>研报数据暂不可用（{brief.reportsError}）。</span>}
             {brief.nextError && <span>预约披露数据暂不可用（{brief.nextError}）。</span>}
+            {brief.consensusError && <span>一致预期数据暂不可用（{brief.consensusError}）。</span>}
             行情与其余列不受影响。
           </p>
         )}
@@ -573,7 +627,12 @@ export function Watchlist() {
                               active && "text-primary",
                             )}
                           >
-                            {col.label}
+                            {HINT[col.key] ? (
+                              <span className="inline-flex items-center gap-1" title={HINT[col.key]}>
+                                {col.label}
+                                <Info className="h-3 w-3 text-faint" aria-label={HINT[col.key]} />
+                              </span>
+                            ) : col.label}
                             {active
                               ? (sort!.dir === "desc"
                                   ? <ChevronDown className="h-3 w-3" />
@@ -581,14 +640,14 @@ export function Watchlist() {
                               // 未排序时也占一个箭头的位子（弱色），否则点上去整行会横向抖一下
                               : <ChevronDown className="h-3 w-3 text-faint" />}
                           </button>
-                        ) : col.key === "target" ? (
+                        ) : HINT[col.key] ? (
                           // VR-GOAL-024 修：023 只给了 aria-label="目标价说明"、**没有 title**
                           // ——悬停什么都不出来，读屏念出来也不含任何解释。图标画在这里
                           // 就是在承诺"有解释"，得真的给。title 挂在整个 span 上，
                           // 让鼠标扫到列名就能触发，不必精准命中那个 12px 的图标。
-                          <span className="inline-flex items-center gap-1" title={TARGET_HINT}>
+                          <span className="inline-flex items-center gap-1" title={HINT[col.key]}>
                             {col.label}
-                            <Info className="h-3 w-3 text-faint" aria-label={TARGET_HINT} />
+                            <Info className="h-3 w-3 text-faint" aria-label={HINT[col.key]} />
                           </span>
                         ) : (
                           col.label
@@ -620,7 +679,8 @@ export function Watchlist() {
                       const loadingCell =
                         (col.src === "e" && brief.loadingEarnings) ||
                         (col.src === "r" && brief.loadingReports) ||
-                        (col.src === "n" && brief.loadingNext);
+                        (col.src === "n" && brief.loadingNext) ||
+                        (col.src === "c" && brief.loadingConsensus);
                       return (
                         <td
                           key={col.key}

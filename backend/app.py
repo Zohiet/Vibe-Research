@@ -798,6 +798,44 @@ def report_summary(codes: str = Query(..., description="逗号分隔的 6 位代
     return {"data": out}
 
 
+_CONSENSUS_CACHE: dict = {}
+
+
+@app.get("/api/consensus")
+def consensus(codes: str = Query(..., description="逗号分隔的 6 位代码")):
+    """多只股票的机构一致预期（最早的预测年度 + EPS + 覆盖机构数）。
+
+    **前向 PE 不在这里算** —— 后端没有现价（现价来自 `/api/quote` 的 3 秒轮询），
+    由前端用 `现价 ÷ eps` 得出。公式的正确性由 `astock.forward_pe` 的单测承担。
+
+    ⚠️ **只取 EPS 与机构数，刻意不取这张表的目标价与评级分布**：它没有时间窗口，
+    陈旧预测原样堆着（实测沪电股份目标价 101~115 而现价 125.9）。那两样继续走
+    `/api/report-summary` 的近半年窗口聚合。
+
+    返回形状照 `/api/next-earnings`：**每个请求的 code 都返回一个键**，
+    值为 `null` 表示"没有一致预期覆盖"。省掉键的话前端分不出「没覆盖」和「接口挂了」。
+    """
+    lst = _validate_codes(codes)
+    now = _time.time()
+    out: dict = {}
+    miss: list[str] = []
+    for c in lst:
+        hit = _CONSENSUS_CACHE.get(c)
+        if hit and now - hit[0] < _BRIEF_TTL:
+            out[c] = hit[1]          # 可能是 None ＝ 没有覆盖
+        else:
+            miss.append(c)
+    if miss:
+        try:
+            fresh = astock.batch_consensus(miss)
+        except Exception as e:  # noqa: BLE001 — 边界统一兜底
+            raise HTTPException(502, f"一致预期源异常：{e}") from e
+        for c in miss:
+            _CONSENSUS_CACHE[c] = (now, fresh.get(c))
+            out[c] = fresh.get(c)
+    return {"data": out}
+
+
 _APPOINT_CACHE: dict = {}
 
 

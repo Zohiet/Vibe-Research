@@ -766,6 +766,103 @@ def batch_earnings(codes: list[str]) -> dict[str, dict]:
 
 
 # ---------------------------------------------------------------------------
+# 机构一致预期（VR-GOAL-027）—— 东财 datacenter，**一次请求查多只**
+# ---------------------------------------------------------------------------
+
+_CONSENSUS_API = "https://datacenter-web.eastmoney.com/api/data/v1/get"
+
+# 年报披露截止月：A 股年报最迟次年 4 月底披露完。过了这个月还停在上一年度，
+# 就是上游真的停更了（见 `is_forecast_stale`）。
+_ANNUAL_REPORT_DEADLINE_MONTH = 4
+
+
+def _pick_forecast_year(row: dict, today=None) -> tuple[int, float] | None:
+    """从一行一致预期里取**最早的预测年度**及其 EPS。没有预测年度返回 None。
+
+    ⚠️ **必须看 `YEAR_MARK` 而不是按位置取第一个。** `YEAR1` 通常是**已实现**的
+    上一年（mark=`A`），把它当预期会让前向 PE 变成"用去年盈利算的当前 PE"——
+    数值看着正常，含义完全错，而且不会有任何报错。
+
+    也不按位置取最早的：上游没承诺过 `YEAR1..4` 递增，所以按**年份**取最小的 `E`。
+    """
+    best: tuple[int, float] | None = None
+    for i in (1, 2, 3, 4):
+        if str(row.get(f"YEAR_MARK{i}") or "").upper() != "E":
+            continue
+        try:
+            year = int(row.get(f"YEAR{i}"))
+        except (TypeError, ValueError):
+            continue
+        eps = _num(row.get(f"EPS{i}"))
+        if eps is None or eps <= 0:      # 亏损 / 缺失的年度跳过，负 PE 会被读成"便宜"
+            continue
+        if best is None or year < best[0]:
+            best = (year, eps)
+    return best
+
+
+def is_forecast_stale(year: int, today=None) -> bool:
+    """一致预期是否过期。
+
+    ⚠️ **这张表没有任何日期字段**，年度是唯一可得的新鲜度信号：表若停更，
+    第一个预测年度就会落后。VR-GOAL-027 用「陈旧」否掉了它的目标价，
+    那就必须回答凭什么信它的 EPS——答案就是这个函数。
+
+    规则不是简单的「早于当年」：**A 股年报最迟次年 4 月底披露完**，所以
+    2027 年 1 月时 2026 年的 EPS 合法地仍是预测。按「早于当年」判会让整列
+    在每年 1~4 月误报为不可用（Plan 起草时就是这么写的，实现时才发现）。
+    """
+    from datetime import date as _date
+
+    today = today or _date.today()
+    if year >= today.year:
+        return False
+    # 年报季（1~4 月）容忍**上一年度**，再往前一年不容忍——那是停更了两年。
+    if today.month <= _ANNUAL_REPORT_DEADLINE_MONTH and year == today.year - 1:
+        return False
+    return True
+
+
+def batch_consensus(codes: list[str], today=None) -> dict[str, dict]:
+    """多只股票的机构一致预期 —— **一次请求查全部**（实测 8 只 0.23s）。
+
+    只取 EPS 与覆盖机构数。**刻意不取这张表的目标价与评级分布**——
+    它没有时间窗口，陈旧预测原样堆着（实测沪电股份目标价 101~115 而现价 125.9，
+    整个区间低于现价）。那两样继续用 `summarize_reports` 的近半年窗口聚合。
+    """
+    codes = [c for c in (codes or []) if c]
+    if not codes:
+        return {}
+    quoted = ",".join(f'"{c}"' for c in codes)
+    r = em_get(_CONSENSUS_API, {
+        "sortColumns": "SECURITY_CODE", "sortTypes": "1",
+        "pageSize": str(min(max(len(codes), 50), 500)), "pageNumber": "1",
+        "reportName": "RPT_WEB_RESPREDICT",
+        "columns": ("SECURITY_CODE,SECURITY_NAME_ABBR,RATING_ORG_NUM,"
+                    "YEAR1,YEAR_MARK1,EPS1,YEAR2,YEAR_MARK2,EPS2,"
+                    "YEAR3,YEAR_MARK3,EPS3,YEAR4,YEAR_MARK4,EPS4"),
+        "filter": f"(SECURITY_CODE in ({quoted}))",
+    }, timeout=20)
+    rows = ((r.json() or {}).get("result") or {}).get("data") or []
+    out: dict[str, dict] = {}
+    for row in rows:
+        code = str(row.get("SECURITY_CODE") or "")
+        if not code:
+            continue
+        picked = _pick_forecast_year(row, today)
+        if not picked:
+            continue
+        year, eps = picked
+        out[code] = {
+            "year": year,
+            "eps": round(eps, 4),
+            "org_count": int(_num(row.get("RATING_ORG_NUM")) or 0),
+            "stale": is_forecast_stale(year, today),
+        }
+    return out
+
+
+# ---------------------------------------------------------------------------
 # 下次财报预约披露（VR-GOAL-024）—— 东财 datacenter，**一次请求查多只**
 # ---------------------------------------------------------------------------
 

@@ -14,15 +14,17 @@ import astock
 
 client = TestClient(app_module.app)
 
-BRIEF_PATHS = ("/api/earnings", "/api/report-summary", "/api/next-earnings")
+BRIEF_PATHS = ("/api/earnings", "/api/report-summary", "/api/next-earnings", "/api/consensus")
 
 
 @pytest.fixture(autouse=True)
 def _clear_cache():
-    for c in (app_module._EARNINGS_CACHE, app_module._RSUM_CACHE, app_module._APPOINT_CACHE):
+    for c in (app_module._EARNINGS_CACHE, app_module._RSUM_CACHE,
+              app_module._APPOINT_CACHE, app_module._CONSENSUS_CACHE):
         c.clear()
     yield
-    for c in (app_module._EARNINGS_CACHE, app_module._RSUM_CACHE, app_module._APPOINT_CACHE):
+    for c in (app_module._EARNINGS_CACHE, app_module._RSUM_CACHE,
+              app_module._APPOINT_CACHE, app_module._CONSENSUS_CACHE):
         c.clear()
 
 
@@ -192,3 +194,51 @@ def test_next_earnings_上游异常_502(monkeypatch):
 
     monkeypatch.setattr(astock, "batch_next_earnings", boom)
     assert client.get("/api/next-earnings?codes=600519").status_code == 502
+
+
+# ── /api/consensus（VR-GOAL-027）──────────────────────────────────────────
+
+def test_consensus_没有覆盖的返回_null_而不是省掉键(monkeypatch):
+    monkeypatch.setattr(astock, "batch_consensus",
+                        lambda codes, today=None: {
+                            "600519": {"year": 2026, "eps": 68.9, "org_count": 44, "stale": False}})
+    r = client.get("/api/consensus?codes=600519,300476")
+    assert r.status_code == 200
+    data = r.json()["data"]
+    assert data["600519"]["year"] == 2026
+    # 同 /api/next-earnings 的约定：省掉键的话前端分不出「没覆盖」和「接口挂了」
+    assert "300476" in data and data["300476"] is None
+
+
+def test_consensus_只为未命中的代码打上游(monkeypatch):
+    calls: list[list[str]] = []
+
+    def fake(codes, today=None):
+        calls.append(list(codes))
+        return {c: {"year": 2026, "eps": 1.0, "org_count": 1, "stale": False} for c in codes}
+
+    monkeypatch.setattr(astock, "batch_consensus", fake)
+    client.get("/api/consensus?codes=600519")
+    client.get("/api/consensus?codes=600519,000858")
+    assert calls == [["600519"], ["000858"]]
+
+
+def test_consensus_没有覆盖的也进缓存(monkeypatch):
+    calls: list[list[str]] = []
+
+    def fake(codes, today=None):
+        calls.append(list(codes))
+        return {}
+
+    monkeypatch.setattr(astock, "batch_consensus", fake)
+    client.get("/api/consensus?codes=300476")
+    client.get("/api/consensus?codes=300476")
+    assert calls == [["300476"]], "空结果没进缓存"
+
+
+def test_consensus_上游异常_502(monkeypatch):
+    def boom(codes, today=None):
+        raise RuntimeError("上游挂了")
+
+    monkeypatch.setattr(astock, "batch_consensus", boom)
+    assert client.get("/api/consensus?codes=600519").status_code == 502

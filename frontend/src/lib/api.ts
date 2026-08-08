@@ -165,6 +165,18 @@ export interface NextEarnings {
   published: boolean;           // 恒为 false（取数时已过滤），UI 不据此分支
 }
 
+// 机构一致预期（VR-GOAL-027）。**只有 EPS，没有 PE**——前向 PE 由前端用现价算，
+// 因为后端拿不到现价（现价来自 /api/quote 的 3 秒轮询）。
+//
+// ⚠️ `Record` 的值可以是 `null`（＝没有一致预期覆盖），与"键不存在"（＝取不到）不同，
+// 约定同 NextEarnings。
+export interface Consensus {
+  year: number;        // 最早的**预测**年度（已实现的年度不会出现在这里）
+  eps: number;         // 该年度的机构一致预期 EPS
+  org_count: number;   // 覆盖机构数
+  stale: boolean;      // 年度已落后 → 上游多半停更了，界面显示为不可用
+}
+
 export interface ReportSummary {
   count: number;                // 篇数
   org_count: number;            // 覆盖机构数（去重）
@@ -376,6 +388,8 @@ export const api = {
   // 值可能是 null（＝没有下次预约），见 NextEarnings 的注释。
   nextEarnings: (codes: string) =>
     get<Record<string, NextEarnings | null>>(`/next-earnings?codes=${codes}`),
+  consensus: (codes: string) =>
+    get<Record<string, Consensus | null>>(`/consensus?codes=${codes}`),
   reports: (code: string) => get<Report[]>(`/reports?code=${code}`),
   news: (code: string, force = false) =>
     get<NewsItem[]>(`/news?code=${code}${force ? "&force=1" : ""}`),

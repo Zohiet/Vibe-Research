@@ -65,6 +65,9 @@ async function setup(page: Page, s: Stub = {}) {
     await page.route(p, (r) =>
       r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: {} }) }));
   }
+  // VR-GOAL-027 起还会请求 `/api/consensus`。既有 glob 都盖不住它。
+  await page.route("**/api/consensus**", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: {} }) }));
   await page.route("**/api/next-earnings**", (r) =>
     s.nextStatus && s.nextStatus >= 400
       ? r.fulfill({ status: s.nextStatus, contentType: "application/json", body: JSON.stringify({ detail: "预约披露源异常：上游 502" }) })

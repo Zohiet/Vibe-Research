@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, type Earnings, type NextEarnings, type ReportSummary } from "@/lib/api";
+import { api, type Consensus, type Earnings, type NextEarnings, type ReportSummary } from "@/lib/api";
 
 /**
  * 自选股页的财报与研报聚合（VR-GOAL-023）。
@@ -36,14 +36,18 @@ export interface WatchlistBrief {
   reports: Record<string, ReportSummary>;
   /** ⚠️ 值可以是 `null`（＝没有下次预约 → 「待公布」），与"键不存在"（＝取不到）不同。 */
   next: Record<string, NextEarnings | null>;
+  /** ⚠️ 同上：值为 `null` ＝ 没有一致预期覆盖。 */
+  consensus: Record<string, Consensus | null>;
   /** 三块各自是否还在路上。**加载中不能渲染成 `—`**，那会被读成"这只没数据"。 */
   loadingEarnings: boolean;
   loadingReports: boolean;
   loadingNext: boolean;
+  loadingConsensus: boolean;
   /** 整块不可用时的原因，渲染成页面顶部的提示条。 */
   earningsError: string | null;
   reportsError: string | null;
   nextError: string | null;
+  consensusError: string | null;
   refresh: () => void;
 }
 
@@ -51,12 +55,15 @@ export function useWatchlistBrief(codes: string[]): WatchlistBrief {
   const [earnings, setEarnings] = useState<Record<string, Earnings>>({});
   const [reports, setReports] = useState<Record<string, ReportSummary>>({});
   const [next, setNext] = useState<Record<string, NextEarnings | null>>({});
+  const [consensus, setConsensus] = useState<Record<string, Consensus | null>>({});
   const [loadingEarnings, setLoadingEarnings] = useState(false);
   const [loadingReports, setLoadingReports] = useState(false);
   const [loadingNext, setLoadingNext] = useState(false);
+  const [loadingConsensus, setLoadingConsensus] = useState(false);
   const [earningsError, setEarningsError] = useState<string | null>(null);
   const [reportsError, setReportsError] = useState<string | null>(null);
   const [nextError, setNextError] = useState<string | null>(null);
+  const [consensusError, setConsensusError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
 
   // codes 是数组，直接进依赖会因为每次渲染都是新引用而无限重取。
@@ -65,8 +72,8 @@ export function useWatchlistBrief(codes: string[]): WatchlistBrief {
   useEffect(() => {
     const list = key ? key.split(",") : [];
     if (!list.length) {
-      setEarnings({}); setReports({}); setNext({});
-      setEarningsError(null); setReportsError(null); setNextError(null);
+      setEarnings({}); setReports({}); setNext({}); setConsensus({});
+      setEarningsError(null); setReportsError(null); setNextError(null); setConsensusError(null);
       return;
     }
     let alive = true;
@@ -97,15 +104,23 @@ export function useWatchlistBrief(codes: string[]): WatchlistBrief {
       })
       .finally(() => { if (alive) setLoadingNext(false); });
 
+    setLoadingConsensus(true); setConsensusError(null);
+    fetchAll(list, api.consensus)
+      .then((d) => { if (alive) setConsensus(d); })
+      .catch((e: unknown) => {
+        if (alive) setConsensusError(e instanceof Error ? e.message : "一致预期数据暂不可用");
+      })
+      .finally(() => { if (alive) setLoadingConsensus(false); });
+
     return () => { alive = false; };
   }, [key, nonce]);
 
   const refresh = useCallback(() => setNonce((n) => n + 1), []);
 
   return {
-    earnings, reports, next,
-    loadingEarnings, loadingReports, loadingNext,
-    earningsError, reportsError, nextError,
+    earnings, reports, next, consensus,
+    loadingEarnings, loadingReports, loadingNext, loadingConsensus,
+    earningsError, reportsError, nextError, consensusError,
     refresh,
   };
 }
