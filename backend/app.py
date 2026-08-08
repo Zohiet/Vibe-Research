@@ -798,6 +798,44 @@ def report_summary(codes: str = Query(..., description="逗号分隔的 6 位代
     return {"data": out}
 
 
+_APPOINT_CACHE: dict = {}
+
+
+@app.get("/api/next-earnings")
+def next_earnings(codes: str = Query(..., description="逗号分隔的 6 位代码")):
+    """多只股票各自的**下次**财报预约披露日与剩余天数。一次上游请求查全部。
+
+    ⚠️ **和 `/api/earnings` 的约定刻意不同**：那条端点把取不到的 code 直接省掉，
+    因为"没有"只有一种含义。这条不行——「查不到下次」是**一年有 5 个月对全市场
+    都成立的正常状态**（上一期披露完、下一期还没排表），它和「接口挂了」在界面上
+    必须分开呈现（前者显示「待公布」，后者显示 `—` 加提示条）。
+
+    所以**每个请求的 code 都会返回一个键**，值为 `null` 表示"没有下次预约"。
+    省掉键会让前端无法区分这两件事。
+    """
+    lst = _validate_codes(codes)
+    now = _time.time()
+    out: dict = {}
+    miss: list[str] = []
+    for c in lst:
+        hit = _APPOINT_CACHE.get(c)
+        if hit and now - hit[0] < _BRIEF_TTL:
+            out[c] = hit[1]          # 可能是 None ＝ 没有下次预约
+        else:
+            miss.append(c)
+    if miss:
+        try:
+            fresh = astock.batch_next_earnings(miss)
+        except Exception as e:  # noqa: BLE001 — 边界统一兜底
+            raise HTTPException(502, f"预约披露源异常：{e}") from e
+        for c in miss:
+            # 连"这只查不到下次"也缓存（存 None），否则那 5 个月里每次请求
+            # 都会为每一只自选股重打一遍上游。
+            _APPOINT_CACHE[c] = (now, fresh.get(c))
+            out[c] = fresh.get(c)
+    return {"data": out}
+
+
 _NEWS_CACHE: dict = {}
 
 

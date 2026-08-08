@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, type Earnings, type ReportSummary } from "@/lib/api";
+import { api, type Earnings, type NextEarnings, type ReportSummary } from "@/lib/api";
 
 /**
  * 自选股页的财报与研报聚合（VR-GOAL-023）。
@@ -34,22 +34,29 @@ async function fetchAll<T>(
 export interface WatchlistBrief {
   earnings: Record<string, Earnings>;
   reports: Record<string, ReportSummary>;
-  /** 两块各自是否还在路上。**加载中不能渲染成 `—`**，那会被读成"这只没数据"。 */
+  /** ⚠️ 值可以是 `null`（＝没有下次预约 → 「待公布」），与"键不存在"（＝取不到）不同。 */
+  next: Record<string, NextEarnings | null>;
+  /** 三块各自是否还在路上。**加载中不能渲染成 `—`**，那会被读成"这只没数据"。 */
   loadingEarnings: boolean;
   loadingReports: boolean;
+  loadingNext: boolean;
   /** 整块不可用时的原因，渲染成页面顶部的提示条。 */
   earningsError: string | null;
   reportsError: string | null;
+  nextError: string | null;
   refresh: () => void;
 }
 
 export function useWatchlistBrief(codes: string[]): WatchlistBrief {
   const [earnings, setEarnings] = useState<Record<string, Earnings>>({});
   const [reports, setReports] = useState<Record<string, ReportSummary>>({});
+  const [next, setNext] = useState<Record<string, NextEarnings | null>>({});
   const [loadingEarnings, setLoadingEarnings] = useState(false);
   const [loadingReports, setLoadingReports] = useState(false);
+  const [loadingNext, setLoadingNext] = useState(false);
   const [earningsError, setEarningsError] = useState<string | null>(null);
   const [reportsError, setReportsError] = useState<string | null>(null);
+  const [nextError, setNextError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
 
   // codes 是数组，直接进依赖会因为每次渲染都是新引用而无限重取。
@@ -58,8 +65,8 @@ export function useWatchlistBrief(codes: string[]): WatchlistBrief {
   useEffect(() => {
     const list = key ? key.split(",") : [];
     if (!list.length) {
-      setEarnings({}); setReports({});
-      setEarningsError(null); setReportsError(null);
+      setEarnings({}); setReports({}); setNext({});
+      setEarningsError(null); setReportsError(null); setNextError(null);
       return;
     }
     let alive = true;
@@ -82,15 +89,23 @@ export function useWatchlistBrief(codes: string[]): WatchlistBrief {
       })
       .finally(() => { if (alive) setLoadingReports(false); });
 
+    setLoadingNext(true); setNextError(null);
+    fetchAll(list, api.nextEarnings)
+      .then((d) => { if (alive) setNext(d); })
+      .catch((e: unknown) => {
+        if (alive) setNextError(e instanceof Error ? e.message : "预约披露数据暂不可用");
+      })
+      .finally(() => { if (alive) setLoadingNext(false); });
+
     return () => { alive = false; };
   }, [key, nonce]);
 
   const refresh = useCallback(() => setNonce((n) => n + 1), []);
 
   return {
-    earnings, reports,
-    loadingEarnings, loadingReports,
-    earningsError, reportsError,
+    earnings, reports, next,
+    loadingEarnings, loadingReports, loadingNext,
+    earningsError, reportsError, nextError,
     refresh,
   };
 }

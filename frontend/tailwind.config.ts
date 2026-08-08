@@ -17,6 +17,11 @@ export default {
         subtle: "hsl(var(--subtle-foreground))",
         faint: "hsl(var(--faint))",
         "input-surface": "hsl(var(--input-surface))",
+        // 财报临近的三档紧迫色（VR-GOAL-024，取值与方向见 index.css）。
+        // 同样受上面那条「未注册即静默无效」的约束。
+        "due-1": "hsl(var(--due-1))",
+        "due-2": "hsl(var(--due-2))",
+        "due-3": "hsl(var(--due-3))",
         primary: { DEFAULT: "hsl(var(--primary))", foreground: "hsl(var(--primary-foreground))" },
         accent: { DEFAULT: "hsl(var(--accent))", foreground: "hsl(var(--accent-foreground))" },
         destructive: { DEFAULT: "hsl(var(--destructive))", foreground: "hsl(var(--destructive-foreground))" },

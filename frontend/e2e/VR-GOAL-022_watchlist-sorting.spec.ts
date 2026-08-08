@@ -37,12 +37,15 @@ const FULL = Object.fromEntries(
 );
 
 /**
- * VR-GOAL-023 起，自选股页还会请求 `/api/earnings` 与 `/api/report-summary`。
+ * VR-GOAL-023 起自选股页还会请求 `/api/earnings` 与 `/api/report-summary`，
+ * VR-GOAL-024 起再加 `/api/next-earnings`。
+ * ⚠️ glob `api/earnings` **匹配不到** `/api/next-earnings`（后者不含前者子串），
+ *    所以必须单独列一条，不能指望前面那条顺带盖住。
  * **不打桩这两个就会真打网络** —— 既慢，又可能触发 console error 让
  * `console_.check()` 变红。本文件验的是排序，这两块给空对象即可。
  */
 async function stubBrief(page: Page) {
-  for (const p of ["**/api/earnings**", "**/api/report-summary**"]) {
+  for (const p of ["**/api/earnings**", "**/api/report-summary**", "**/api/next-earnings**"]) {
     await page.route(p, (r) =>
       r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: {} }) }));
   }

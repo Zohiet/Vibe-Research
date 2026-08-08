@@ -57,6 +57,11 @@ async function setup(page: Page, s: Stub = {}) {
   await assertSandbox(page);
   await page.route("**/api/quote**", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(QUOTES) }));
+  // VR-GOAL-024 起还会请求 `/api/next-earnings`。⚠️ 下面那条 `**/api/earnings**`
+  // **盖不住它**——`/api/next-earnings` 不含 `/api/earnings` 子串。本文件验的是
+  // 023 的列，这一块给空对象即可。
+  await page.route("**/api/next-earnings**", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: {} }) }));
   await page.route("**/api/earnings**", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: s.earnings ?? EARNINGS }) }));
   await page.route("**/api/report-summary**", (r) =>

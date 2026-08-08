@@ -31,7 +31,20 @@ LEVELS = [
     ("--muted-foreground", 8.0, "次要", True),
     ("--subtle-foreground", 5.0, "更次要", True),
     ("--faint", 3.0, "装饰（非文本，走 3:1）", False),
+    # VR-GOAL-024：财报临近的三档紧迫色。**每一档都是要读的数据文本**，
+    # 所以最远那档也必须 ≥AA，不能因为"只是个提示色"就放松。
+    ("--due-1", 5.0, "临近 5-4 天", True),
+    ("--due-2", 8.0, "临近 3-2 天", True),
+    ("--due-3", 12.8, "临近今明两天", True),
 ]
+
+# 三档紧迫色的阶梯（与上面的文字三级是两套独立的阶梯，各自要"拉得开"）。
+#
+# ⚠️ 目标值取成**公比 1.6 的等比数列**不是随手挑的：两个 token 的互相对比度
+# **恒等于**它们各自对卡片对比度的比值，所以要让相邻档互相 ≥1.5，目标值就必须
+# 成等比。等差的 5.5/7.5/10.0 换算成互相对比度只有 1.35 / 1.32，按本仓库
+# 既有口径是不达标的（VR-GOAL-024 实现时才算出来，Plan 里写错了）。
+DUE_LADDER = ["--due-3", "--due-2", "--due-1"]
 
 # hsl() 落到 8bit RGB 会有取整，允许极小的偏差；给 0.15 已经很宽。
 TOL = 0.15
@@ -131,6 +144,40 @@ def test_三级之间彼此拉得开(theme, selector):
             bad.append(f"{a} 与 {b} 只差 {r:.2f}:1，肉眼分不出，这一级白设了")
     print(f"\n【{theme}】层级间距\n" + "\n".join(report))
     assert not bad, f"{theme}主题层级压平了：\n  " + "\n  ".join(bad)
+
+
+@pytest.mark.parametrize("theme,selector", THEMES.items())
+def test_三档紧迫色彼此拉得开(theme, selector):
+    """三档要是分不出来，"越近越深"就是句空话——那还不如做成二值高亮。
+
+    用的是和文字三级同一条尺子（相邻两档互相 ≥1.5:1），不因为它是"提示色"就放宽。
+    """
+    tk = _tokens(selector)
+    bad, report = [], []
+    for a, b in zip(DUE_LADDER, DUE_LADDER[1:]):
+        for k in (a, b):
+            assert k in tk, f"{theme}（{selector}）缺 token {k}"
+        r = _ratio(_rgb(tk[a]), _rgb(tk[b]))
+        report.append(f"    {a} -> {b}  {r:.2f}:1")
+        if r < 1.5:
+            bad.append(f"{a} 与 {b} 只差 {r:.2f}:1，肉眼分不出，这一档白设了")
+    print(f"\n【{theme}】紧迫三档间距\n" + "\n".join(report))
+    assert not bad, f"{theme}主题的紧迫色阶被压平了：\n  " + "\n  ".join(bad)
+
+
+@pytest.mark.parametrize("theme,selector", THEMES.items())
+def test_紧迫色阶在两个主题下方向相反(theme, selector):
+    """亮色主题「越紧迫越深」，暗色主题「越紧迫越亮」——这是暗色主题的常态，
+    但必须显式钉住：一套值套两个主题会让其中一个方向反掉，而**那不会有任何报错**。
+
+    实测过：没有任何单一明度能同时满足两个主题（暗色需 L≥48%、亮色需 L≤45%，不重叠）。
+    """
+    tk = _tokens(selector)
+    ls = [tk[k][2] for k in ("--due-1", "--due-2", "--due-3")]   # HSL 的 L 分量
+    if selector == ":root":     # 暗色：越紧迫（due-3）越亮
+        assert ls[0] < ls[1] < ls[2], f"暗色的紧迫色阶方向反了：L = {ls}"
+    else:                       # 亮色：越紧迫越深
+        assert ls[0] > ls[1] > ls[2], f"亮色的紧迫色阶方向反了：L = {ls}"
 
 
 @pytest.mark.parametrize("theme,selector", THEMES.items())

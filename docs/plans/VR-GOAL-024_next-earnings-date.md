@@ -1,7 +1,7 @@
 # VR-GOAL-024 实现 Plan ｜ 自选股页增加「下次财报发布日期预告」
 
 - **Goal Spec**：[`../goals/VR-GOAL-024_next-earnings-date.md`](../goals/VR-GOAL-024_next-earnings-date.md)
-- **确认状态**：⬜ 待确认
+- **确认状态**：✅ 已确认（2026-08-08）
 
 > **未经确认不得开始写代码。**
 

@@ -9,7 +9,7 @@ import { useLiveQuotes, isTradingHours } from "@/hooks/useLiveQuotes";
 import { useWatchlistBrief } from "@/hooks/useWatchlistBrief";
 import { storageGet, storageSet, storageRemove } from "@/lib/storage";
 import { cn } from "@/lib/utils";
-import type { Earnings, Quote, ReportSummary, TargetPrice } from "@/lib/api";
+import type { Earnings, NextEarnings, Quote, ReportSummary, TargetPrice } from "@/lib/api";
 
 // A 股红涨绿跌（与整个看板一致）。
 // ⚠️ **只用于价格涨跌**。财务同比刻意不上色（VR-GOAL-023 决策 11）：红绿在 A 股是
@@ -70,6 +70,32 @@ const fmtTarget = (t: TargetPrice) => {
 const dateNum = (d: string | null | undefined) =>
   d ? Number(d.replace(/-/g, "")) : null;
 
+// ── 财报临近的三档紧迫色（VR-GOAL-024 决策 2/5/6/7）───────────────────────
+//
+// **改阈值就改这一行。** 实测 68.8% 的公司挤在 8 月最后一周，所以财报季末这一列
+// 会大面积上色——那几天它们确实全都临近，高亮没说谎，故不为了好看而压低阈值。
+const DUE_HIGHLIGHT_DAYS = 5;
+
+/**
+ * 剩余天数 → 三档色类；不该上色时返回 undefined。
+ *
+ * 两处刻意不上色：
+ * - **超过阈值**：那不叫临近。
+ * - **已过预约日（负数）**：这是全套里唯一一处颜色会带褒贬的地方——
+ *   「还有 2 天」是时间事实，给「已过 101 天」上色就成了"这家不对劲"的评价，
+ *   撞「不做主观评分」。它天然也不需要颜色：一个三位数天数混在一列两位数里自己就跳出来。
+ */
+const dueClass = (d: number | null | undefined): string | undefined => {
+  if (d == null || d < 0 || d > DUE_HIGHLIGHT_DAYS) return undefined;
+  if (d <= 1) return "text-due-3";   // 今明两天
+  if (d <= 3) return "text-due-2";   // 3-2 天
+  return "text-due-1";               // 5-4 天
+};
+
+/** 剩余天数 → 人话。已过的说「已过 N 天」，不用「逾期」——后者听着像指控。 */
+const dueText = (d: number) =>
+  d < 0 ? `已过 ${-d} 天` : d === 0 ? "今天" : d === 1 ? "明天" : `${d}天`;
+
 // ── 列定义（VR-GOAL-023 把 8 列扩到 20）──────────────────────────────────
 //
 // 每个可排序列**自带取值函数**，返回 null 表示"这只没有这个值"。
@@ -84,6 +110,8 @@ interface Data {
   quotes: Record<string, Quote>;
   earnings: Record<string, Earnings>;
   reports: Record<string, ReportSummary>;
+  /** ⚠️ 值为 `null` ＝ 没有下次预约（「待公布」）；**键不存在** ＝ 取不到（`—`）。两者不同。 */
+  next: Record<string, NextEarnings | null>;
 }
 
 interface Col {
@@ -93,7 +121,7 @@ interface Col {
   sort?: (c: string, d: Data) => number | null;
   render: (c: string, d: Data) => ReactNode;
   /** 该列所属数据块，用于三态渲染里判断"是否还在加载"。 */
-  src?: "e" | "r";
+  src?: "e" | "r" | "n";
   cls?: string;
   /** 组的第一列，画一条竖分隔。 */
   groupStart?: boolean;
@@ -101,10 +129,19 @@ interface Col {
 
 const FAINT = <span className="text-faint">—</span>;
 
+/** 目标价表头那个感叹号的解释文本。**同时用于 `title` 与 `aria-label`** ——
+ *  VR-GOAL-023 只给了 `aria-label="目标价说明"`，等于什么都没说。 */
+const TARGET_HINT =
+  "机构原话，按机构去重后取每家最新一篇。已标明给价机构数与日期；" +
+  "超 90 天的以弱色显示。VR 不自行推算目标价，也不计算它相对现价的涨跌空间。";
+
 const GROUPS: { label: string; span: number }[] = [
   { label: "", span: 2 },
   { label: "行情", span: 5 },
   { label: "最新财报", span: 5 },
+  // 单独成组而不是并进「最新财报」：那一组五列全在描述**同一期**报告，
+  // 塞进一个描述**另一期**的列，读者立刻要问「营收同比是上次的还是下次的」。
+  { label: "下次财报", span: 1 },
   { label: "近半年研报", span: 7 },
   { label: "", span: 1 },
 ];
@@ -161,6 +198,28 @@ const COLUMNS: Col[] = [
     render: (c, d) => {
       const v = d.earnings[c]?.roe;
       return v == null ? FAINT : `${v}%`;
+    } },
+
+  // ── 下次财报（VR-GOAL-024）──
+  // ⚠️ 这一列**一年约有 5 个月对全市场都是「待公布」**——预约披露表在报告期末
+  // 前后才入库（实测五期的入库时间），上一期披露完到下一期排表之间是空窗。
+  // 那不是故障，所以显示「待公布」而不是 `—`。
+  { key: "next_date", label: "预约日", groupStart: true, src: "n", cls: "font-mono whitespace-nowrap",
+    sort: (c, d) => dateNum(d.next[c]?.appoint_date),
+    render: (c, d) => {
+      if (!(c in d.next)) return FAINT;              // 取不到
+      const n = d.next[c];
+      if (!n?.appoint_date) return <span className="text-subtle">待公布</span>;
+      const cls = dueClass(n.days_left);
+      return (
+        <span
+          className={cls}
+          title={n.report_type ? `${n.report_type} 预约 ${n.appoint_date}` : undefined}
+        >
+          {fmtMD(n.appoint_date)}
+          {n.days_left != null && <span className={cls ? "" : "text-subtle"}> · {dueText(n.days_left)}</span>}
+        </span>
+      );
     } },
 
   { key: "r_count", label: "篇", groupStart: true, src: "r", cls: "font-mono text-muted-foreground",
@@ -251,7 +310,9 @@ export function Watchlist() {
   const { quotes, loading, updatedAt, polling, error, refresh } = useLiveQuotes(codes, live);
   const brief = useWatchlistBrief(codes);
 
-  const data: Data = { quotes, earnings: brief.earnings, reports: brief.reports };
+  const data: Data = {
+    quotes, earnings: brief.earnings, reports: brief.reports, next: brief.next,
+  };
 
   const toggleSort = (key: string) => {
     const next = nextSort(sort, key);
@@ -279,7 +340,7 @@ export function Watchlist() {
     has.sort((a, b) => sign * (vals.get(a)! - vals.get(b)!));
     return [...has, ...missing];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [codes, quotes, brief.earnings, brief.reports, sort]);
+  }, [codes, quotes, brief.earnings, brief.reports, brief.next, sort]);
 
   const toggleLive = () => {
     setLive((on) => {
@@ -320,6 +381,15 @@ export function Watchlist() {
       const fin = e
         ? ` | ${fmtQuarter(e.quarter) ?? "最新财报"}（${e.notice_date ?? "?"} 发布）营收同比${fmtPct(e.revenue_yoy) ?? "—"} 净利同比${fmtPct(e.profit_yoy) ?? "—"} ROE${e.roe ?? "—"}%`
         : "";
+      // 下次财报：**「待公布」也要说出来**，否则 AI 会以为我们没查这一项，
+      // 而"这一期还没排上交易所的表"本身就是它该知道的事实。
+      let nxt = "";
+      if (c in brief.next) {
+        const n = brief.next[c];
+        nxt = n?.appoint_date
+          ? ` | 下次财报预约 ${n.appoint_date}${n.days_left != null ? `（${dueText(n.days_left)}）` : ""}${n.report_type ? ` ${n.report_type}` : ""}`
+          : " | 下次财报预约日待公布";
+      }
       let rep = "";
       if (r) {
         const rt = Object.entries(r.ratings).map(([k, v]) => `${k}${v}`).join(" ");
@@ -328,14 +398,14 @@ export function Watchlist() {
           rep += ` | 机构目标价 ${fmtTarget(r.target)}${r.target.stale ? "（超 90 天，旧观点）" : ""}`;
         }
       }
-      return head + fin + rep;
+      return head + fin + nxt + rep;
     });
     return (
       "我的自选股（本地）：\n" + lines.join("\n") +
       "\n\n注：评级分布主要反映覆盖热度——A 股卖方极少出具减持/卖出评级。" +
       "目标价为机构原话，已标明给价机构数与日期。"
     );
-  }, [codes, quotes, brief.earnings, brief.reports]);
+  }, [codes, quotes, brief.earnings, brief.reports, brief.next]);
 
   const sortedCol = sort && COLUMNS.find((c) => c.key === sort.key);
 
@@ -446,10 +516,11 @@ export function Watchlist() {
 
         {/* 某一块数据源挂了：说明是哪一块不可用，表格其余列照常。
             **副功能不许干掉自选股页**（照 wikipush 的「失败不抛，降级成原因」）。 */}
-        {(brief.earningsError || brief.reportsError) && (
+        {(brief.earningsError || brief.reportsError || brief.nextError) && (
           <p className="mb-2 rounded-lg border border-warning/30 bg-warning/5 px-3 py-2 text-xs text-muted-foreground">
             {brief.earningsError && <span>财报数据暂不可用（{brief.earningsError}）。</span>}
             {brief.reportsError && <span>研报数据暂不可用（{brief.reportsError}）。</span>}
+            {brief.nextError && <span>预约披露数据暂不可用（{brief.nextError}）。</span>}
             行情与其余列不受影响。
           </p>
         )}
@@ -511,13 +582,13 @@ export function Watchlist() {
                               : <ChevronDown className="h-3 w-3 text-faint" />}
                           </button>
                         ) : col.key === "target" ? (
-                          <span className="inline-flex items-center gap-1">
+                          // VR-GOAL-024 修：023 只给了 aria-label="目标价说明"、**没有 title**
+                          // ——悬停什么都不出来，读屏念出来也不含任何解释。图标画在这里
+                          // 就是在承诺"有解释"，得真的给。title 挂在整个 span 上，
+                          // 让鼠标扫到列名就能触发，不必精准命中那个 12px 的图标。
+                          <span className="inline-flex items-center gap-1" title={TARGET_HINT}>
                             {col.label}
-                            <Info
-                              className="h-3 w-3 text-faint"
-                              // 目标价是机构原话，VR 不推算、也不算隐含空间。
-                              aria-label="目标价说明"
-                            />
+                            <Info className="h-3 w-3 text-faint" aria-label={TARGET_HINT} />
                           </span>
                         ) : (
                           col.label
@@ -548,7 +619,8 @@ export function Watchlist() {
                       // 合并前两态会把"还没回来"渲染成"这只没数据"。
                       const loadingCell =
                         (col.src === "e" && brief.loadingEarnings) ||
-                        (col.src === "r" && brief.loadingReports);
+                        (col.src === "r" && brief.loadingReports) ||
+                        (col.src === "n" && brief.loadingNext);
                       return (
                         <td
                           key={col.key}
