@@ -358,7 +358,10 @@ export function DailyReview() {
         )}
       </GlassCard>
 
-      {/* 4b. 短线情绪（连板梯队 / 打板情绪，聚合口径零个股名） */}
+      {/* 4b. 短线情绪。比率类指标（封板率 / 炸板率 / 连板梯队）是不含个股名的聚合口径；
+              下面的连板股清单**含个股名**——客观公开榜单，不推荐 / 不预测 / 不评分
+              （2026-07-05 产品定位调整）。此处原注释写着「聚合口径零个股名」，是错的，
+              VR-GOAL-025 校正。 */}
       <div className="mb-3 flex items-center gap-2">
         <h3 className="flex items-center gap-1.5 text-sm font-semibold text-muted-foreground"><Flame className="h-4 w-4" /> 短线情绪</h3>
         <span className="text-[11px] text-muted-foreground">连板股 · 打板情绪 · 客观公开榜单</span>
