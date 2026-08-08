@@ -273,6 +273,8 @@ def _company_info(args: dict):
         pass
     return {
         "name": q.get("name"), "code": code, "industry_or_board": industry,
+        # VR-GOAL-026 之前这两个值是反的（根因在 astock._parse_gtimg 的字段位），
+        # 于是四条 AI 出口拿到的总市值其实是流通市值。根因已修，这里保持直取。
         "total_mcap_yi": q.get("mcap_yi"), "float_mcap_yi": q.get("float_mcap_yi"),
         "pe_ttm": q.get("pe_ttm"), "pb": q.get("pb"),
         "note": "概况接口暂不可用，以上为行情源降级数据（市值单位：亿元）",

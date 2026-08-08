@@ -80,8 +80,12 @@ def _parse_gtimg(data: str) -> dict[str, dict]:
             "turnover_pct": num(38),
             "pe_ttm": num(39),
             "amplitude_pct": num(43),
-            "mcap_yi": num(44),
-            "float_mcap_yi": num(45),
+            # ⚠️ **这两位不要凭直觉排序**：腾讯的 [44] 是**流通**市值、[45] 才是**总**市值。
+            # 直觉（"总在前、流通在后"）恰好是反的，VR-GOAL-026 之前就这么错了两年多——
+            # 个股页标着「总市值」的数一直是流通市值，还经 AI context 写进了沉淀与 wiki。
+            # 自证方式：总市值恒 ≥ 流通市值。胜宏科技 [44]=2424.28 < [45]=2753.76。
+            "mcap_yi": num(45),          # 总市值
+            "float_mcap_yi": num(44),    # 流通市值
             "pb": num(46),
             "limit_up": num(47),
             "limit_down": num(48),

@@ -29,13 +29,26 @@ def test_pe_digestion():
 
 
 def _gtimg_line(**overrides) -> str:
-    # 构造一条腾讯行情返回行：v_sh600519="1~名~代码~价~..."（≥53 字段）。
+    """构造一条腾讯行情返回行：v_sh600519="1~名~代码~价~..."（≥53 字段）。
+
+    ⚠️ **两个市值字段刻意给不同的值，取自胜宏科技的真实数据。**
+
+    这条测试原本把同一个数放进 `parts[44]`、再断言 `mcap_yi == 它`——
+    **那是照着实现写的，不是照着真相写的**：两个字段互换时它照样绿。
+    VR-GOAL-026 实测证实 `[44]` / `[45]` 确实一直是反的（`[44]` 是流通市值、
+    `[45]` 才是总市值），而这条测试非但没抓到，还在保护它。
+
+    错误活这么久还有第二个原因：规范测试股是贵州茅台，而**茅台的总市值与流通市值
+    差 0.0%**（16366.32 / 16366.32），拿它做样本永远看不出互换。所以这里换成
+    胜宏科技的真实数字：2424.28（流通）/ 2753.76（总），差 13.6%。
+    """
     parts = ["0"] * 55
-    parts[1] = overrides.get("name", "贵州茅台")
-    parts[3] = overrides.get("price", "1194.45")
-    parts[39] = overrides.get("pe_ttm", "18.05")
-    parts[44] = overrides.get("mcap", "15000")
-    parts[46] = overrides.get("pb", "6.41")
+    parts[1] = overrides.get("name", "胜宏科技")
+    parts[3] = overrides.get("price", "280.20")
+    parts[39] = overrides.get("pe_ttm", "58.84")
+    parts[44] = overrides.get("float_mcap", "2424.28")   # 腾讯这一位是**流通**市值
+    parts[45] = overrides.get("mcap", "2753.76")         # 腾讯这一位是**总**市值
+    parts[46] = overrides.get("pb", "17.58")
     return 'v_sh600519="' + "~".join(parts) + '";'
 
 
@@ -43,11 +56,25 @@ def test_parse_gtimg():
     out = astock._parse_gtimg(_gtimg_line())
     assert "600519" in out
     q = out["600519"]
-    assert q["name"] == "贵州茅台"
-    assert q["price"] == 1194.45
-    assert q["pe_ttm"] == 18.05
-    assert q["pb"] == 6.41
-    assert q["mcap_yi"] == 15000
+    assert q["name"] == "胜宏科技"
+    assert q["price"] == 280.20
+    assert q["pe_ttm"] == 58.84
+    assert q["pb"] == 17.58
+    assert q["mcap_yi"] == 2753.76, "总市值取错了字段位"
+    assert q["float_mcap_yi"] == 2424.28, "流通市值取错了字段位"
+
+
+def test_总市值不得小于流通市值():
+    """这个不变量与实现无关，是个恒真的事实——流通股本是总股本的子集。
+
+    它比上面那条更难写错：就算有人把两个下标又换回去，这条也会红，
+    因为**大小关系不会因为你怎么命名字段而改变**。
+    """
+    q = astock._parse_gtimg(_gtimg_line())["600519"]
+    assert q["mcap_yi"] >= q["float_mcap_yi"], (
+        f"总市值 {q['mcap_yi']} < 流通市值 {q['float_mcap_yi']} —— "
+        "流通股本是总股本的子集，这个关系不可能反过来。多半是字段位取反了。"
+    )
 
 
 def test_parse_gtimg_bad_line_ignored():
