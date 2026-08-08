@@ -26,9 +26,7 @@
 | VR-GOAL-020 发现 | **`conda run` 在 pytest 非零退出时自己崩溃**（进交互式 error-report 提示、吞掉输出）——变红实验会变成"做了等于没做"。改直接调 `miniforge3/envs/tradingagents/python.exe -m pytest` | 本会话已踩两次，值得写进 CLAUDE.md 或 skill |
 | VR-GOAL-020 发现 | **跑 `ci.ps1 -E2E` 会重拍全部历史 Goal 截图**（28 个文件），每次都要手动 `git checkout -- docs/screenshots/` 还原 | 与「shot() 拍不到折叠线以下」是同一处工具欠账 |
 | VR-GOAL-022 剔出 | 自选股开着实时行情时行会跟着重排，换位瞬间可能点错「移除」。「悬停时冻结重排」是便宜的后续 | 022 决策 2 权衡后不做 |
-| VR-GOAL-023 剔出 | **巨潮（cninfo）作为财报发布日的备用源**：已实测验证（orgId 映射表 6230 只 / 0.24s、category 参数、与东财 NOTICE_DATE 交叉一致），但**未写代码**。做兜底可以，做主源会错——五粮液最新一条是「2025年度报告（英文版）」、绿的谐波是「更正后」，都不是最新报告期，须靠标题过滤 | 实现细节全在 `docs/superpowers/specs/2026-08-07-watchlist-fundamentals-design.md` |
-| VR-GOAL-023 剔出 | **表格类页宽 / 正文类页窄的全局分道**。023 只放宽了自选股一页（`router` 的 `handle.wide`），其余 11 页仍锁 1152px | 需逐页判定归类 + 12 页截图，应是独立完整档 |
-| VR-GOAL-023 遗留 | 研报聚合每只只取 1 页（≤100 篇 / 180 天），极热门标的理论上会被截断且**界面不提示** | 实测最热的茅台 32 篇，余量三倍 |
+| **下次财报发布日期预告** | 自选股页除「最新财报」外，再给一列**下次**财报的预约披露日与剩余天数。数据源已实测：东财 `RPT_PUBLIC_BS_APPOIN`，一次请求查多只（8 只 0.19s，走 `em_get`，无新依赖），字段有 `APPOINT_PUBLISH_DATE` / `IS_PUBLISH` / `RESIDUAL_DAYS`，还带改期记录 `FIRST_/SECOND_/THIRD_CHANGE_DATE`。⚠️ **刚披露完的股票查不到下次**（实测 8 只里宁德时代缺席：半年报已披露、三季报预约日尚未公布），界面要想清楚那一格显示什么 | 负责人 2026-08-08 提出 |
 | VR-GOAL-023 发现 | **`tools.py` 的返回字段与 `SYSTEM_PROMPT` 的合规条款此前零测试覆盖**。023 补了 `test_ai_outlet_discipline.py`，但只钉住了目标价那条口径，其余红线仍是裸奔 | 便宜的后续：把红线逐条钉进那个文件 |
 | VR-GOAL-023 未做 | 研报接口现成但本轮未要的两样：**评级变动**（`lastEmRatingName` 可推上调/下调）、**一致预期 EPS / 前向 PE**（`predictThisYearEps` 等） | 数据白拿，只差产品决定 |
 | 版本号 | 五处版本号不一致：`frontend/package.json` 是 `0.2.3`，其余四处还是 `0.2.2` | 见 `CLAUDE.md`「改版本号时」 |
