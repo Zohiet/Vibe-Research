@@ -45,7 +45,8 @@ const FULL = Object.fromEntries(
  * `console_.check()` 变红。本文件验的是排序，这两块给空对象即可。
  */
 async function stubBrief(page: Page) {
-  for (const p of ["**/api/earnings**", "**/api/report-summary**", "**/api/next-earnings**"]) {
+  for (const p of ["**/api/earnings**", "**/api/report-summary**",
+                   "**/api/next-earnings**", "**/api/consensus**"]) {
     await page.route(p, (r) =>
       r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: {} }) }));
   }

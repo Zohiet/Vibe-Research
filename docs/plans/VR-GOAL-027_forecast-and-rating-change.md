@@ -1,7 +1,7 @@
 # VR-GOAL-027 实现 Plan ｜ 自选股页加一致预期（前向 PE）+ 表格宽度护栏
 
 - **Goal Spec**：[`../goals/VR-GOAL-027_forecast-and-rating-change.md`](../goals/VR-GOAL-027_forecast-and-rating-change.md)
-- **确认状态**：⬜ 待确认
+- **确认状态**：✅ 已确认（2026-08-08）
 
 > **未经确认不得开始写代码。**
 
