@@ -151,6 +151,24 @@ test("验收项4+5 · 已过期 / 无覆盖 / 取不到，三者互不相同且�
   console_.check();
 });
 
+test("EPS 非正时不出数，也不出负 PE", async ({ page }) => {
+  // **公式的边界只有这里测得到。** 后端那份 forward_pe 已删——它在生产路径上
+  // 从不执行，测它证明不了这份真正跑的实现（见 test_consensus.py 的说明）。
+  //
+  // 亏损或预期为 0 时不能算 PE：负 PE 在表格里会被读成"很便宜"。
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await setup(page, {
+    consensus: {
+      "600519": { year: 2026, eps: 0, org_count: 10, stale: false },
+      "300750": { year: 2026, eps: -1.5, org_count: 10, stale: false },
+    },
+  });
+  for (const name of ["甲", "乙"]) {
+    const cell = await cellByHeader(page, name, "前向PE");
+    await expect(cell, `${name} 的 EPS 非正，不该算出 PE`).toHaveText("—");
+  }
+});
+
 test("排序按前向PE，过期与无覆盖的沉底", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
   await setup(page);

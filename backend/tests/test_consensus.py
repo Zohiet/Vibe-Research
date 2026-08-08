@@ -101,25 +101,16 @@ def test_年报季也不容忍再往前一年():
     assert astock.is_forecast_stale(2025, date(2027, 1, 15)) is True
 
 
-# ── forward_pe ────────────────────────────────────────────────────────────
-
-def test_前向PE_正常():
-    # 贵州茅台实测：现价 1309.2、2026E EPS 68.9 → 19.0
-    assert astock.forward_pe(1309.2, 68.9) == 19.0
-
-
-def test_前向PE_保留一位小数():
-    assert astock.forward_pe(388.1, 20.75) == 18.7
-
-
-def test_EPS_非正时没有前向PE():
-    # 亏损或预期为 0 时，PE 没有意义（负 PE 会被读成"很便宜"）。
-    for eps in (0, -1.5):
-        assert astock.forward_pe(100.0, eps) is None, f"eps={eps} 不该算出 PE"
-
-
-def test_缺值时返回_None_而不是零():
-    # VR-GOAL-014：不返回假的 0。
-    assert astock.forward_pe(None, 4.46) is None
-    assert astock.forward_pe(100.0, None) is None
-    assert astock.forward_pe(0, 4.46) is None
+# ── 前向 PE 的公式为什么不在这里测 ────────────────────────────────────────
+#
+# VR-GOAL-027 的 Plan 原本要在后端放一份 `forward_pe` 供单测，前端再写一份用于渲染，
+# 并说"用同一组数值各断言一次盯住漂移"。**验收时发现这个判断是错的**：
+#
+# 后端那份在生产路径上**从不执行**（`grep` 只有测试调它）——前向 PE 必须在前端算，
+# 因为后端拿不到现价（现价来自 `/api/quote` 的 3 秒轮询）。而**测 Python 那份
+# 证明不了 TypeScript 那份**，后者才是真正跑的。那不是双保险，是假保证，
+# 且正是「从不执行的代码就是 bug 藏身处」的标准形态。
+#
+# 所以后端那份已删除。公式与其边界（eps ≤ 0 / 缺值 → 不出数，不出负 PE）
+# 由 `VR-GOAL-027_forward-pe.spec.ts` 用具体数值断言：
+#   1309.2 / 68.9 → 19、388.1 / 2.0 → 194.1、eps=0 → 不显示数字。

@@ -823,22 +823,6 @@ def is_forecast_stale(year: int, today=None) -> bool:
     return True
 
 
-def forward_pe(price, eps) -> float | None:
-    """前向 PE ＝ 现价 ÷ 机构一致预期 EPS。
-
-    ⚠️ **这个数是 VR 算的，不是任何机构给的**，界面上必须标明算法。
-    它与 VR-GOAL-023 否掉的「隐含涨跌空间」性质不同：前向 PE 是**估值水平**
-    （一个状态描述），隐含空间是**收益预期**（对未来回报的陈述）——
-    后者才落在「不预测涨跌」上。见 VR-GOAL-027 决策 4。
-
-    `eps <= 0` 返回 None 而不是负数：负 PE 在表格里会被读成"很便宜"。
-    """
-    p, e = _num(price), _num(eps)
-    if not p or p <= 0 or e is None or e <= 0:
-        return None
-    return round(p / e, 1)
-
-
 def batch_consensus(codes: list[str], today=None) -> dict[str, dict]:
     """多只股票的机构一致预期 —— **一次请求查全部**（实测 8 只 0.23s）。
 
