@@ -105,3 +105,53 @@ def test_脏日期退成_None_而不是抛():
     d = astock._parse_appoint_row(_row(APPOINT_PUBLISH_DATE=""), TODAY)
     assert d["appoint_date"] is None
     assert d["days_left"] is None
+
+
+# ── batch_next_earnings 的取数规则（上游用 mock，不联网）────────────────────
+#
+# **为什么补这一组**：变红实验④（把取数改成"只取未过期的"）跑完发现
+# `*ST萃华` 那条逾期记录直接消失了，**却没有任何测试变红**——这条规则原先
+# 只有 `-m live` 覆盖，而 E2E 是打桩的。拷打定下的规则没有护栏＝早晚被改掉。
+
+import contextlib
+import unittest.mock as _mock
+
+
+@contextlib.contextmanager
+def _fake_rows(*rows):
+    """把 `em_get` 换成假的，喂给它一组上游行。不联网。"""
+    with _mock.patch.object(astock, "em_get") as g:
+        g.return_value.json.return_value = {"result": {"data": list(rows)}}
+        yield g
+
+
+def _appoint(code, date_str, rtype="2026年 半年报"):
+    return {"SECURITY_CODE": code, "APPOINT_PUBLISH_DATE": f"{date_str} 00:00:00",
+            "REPORT_TYPE_NAME": rtype, "IS_PUBLISH": "0"}
+
+
+def test_每只取预约日最早的一条():
+    # 上游已按预约日升序返回，同一只的后续记录应被跳过。
+    with _fake_rows(_appoint("600519", "2026-08-15"),
+                    _appoint("600519", "2026-10-30", "2026年 三季报")):
+        out = astock.batch_next_earnings(["600519"], TODAY)
+    assert out["600519"]["appoint_date"] == "2026-08-15"
+
+
+def test_已过预约日的记录必须保留而不是被过滤掉():
+    # `*ST萃华`：一季报预约 2026-04-29 至今未披露。
+    # 「一季报预约 04-29、已过 101 天没出」比「它的半年报预约在 08-xx」更值得知道，
+    # 所以取数规则是「未披露中最早的一条，**含已过期**」——不加特例、不做过滤。
+    with _fake_rows(_appoint("002731", "2026-04-29", "2026年 一季报"),
+                    _appoint("002731", "2026-08-29")):
+        out = astock.batch_next_earnings(["002731"], TODAY)
+    assert "002731" in out, "逾期记录被过滤掉了 —— 那正是最该看到的一条"
+    assert out["002731"]["days_left"] == -101
+    assert out["002731"]["report_type"] == "2026年 一季报"
+
+
+def test_空入参不打上游():
+    with _mock.patch.object(astock, "em_get") as g:
+        assert astock.batch_next_earnings([], TODAY) == {}
+        assert astock.batch_next_earnings(None, TODAY) == {}
+        g.assert_not_called()

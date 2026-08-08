@@ -123,7 +123,10 @@ test("验收项1 · 「下次财报」成组出现，格子是日期+剩余天�
   // 今明两天用的是人话，不是「0天 / 1天」
   await expect(await cellByHeader(page, "丁", "预约日")).toContainText("明天");
 
-  await shot(page, GOAL, "01_下次财报列");
+  // 桩数据刻意把**六种状态放在同一屏**（7天/5天/3天/明天/已过101天/待公布/取不到），
+  // 所以一张图就是验收项 1、2、4、6 的共同证据。
+  // 截四张一模一样的图不是四条证据，是凑数（VR-GOAL-023 犯过一次）。
+  await shot(page, GOAL, "01_六种状态同屏");
   console_.check();
 });
 
@@ -142,7 +145,6 @@ test("验收项2 · 待公布与取不到是两回事，且同屏可见", async 
   await expect(await cellByHeader(page, "庚", "预约日"), "键不存在应显示 —")
     .toHaveText("—");
 
-  await shot(page, GOAL, "02_待公布与取不到");
   console_.check();
 });
 
@@ -162,7 +164,6 @@ test("验收项4 · 已过预约日显示「已过 N 天」且不着色", async 
     expect(戊色, `已过预约日被着上了 ${cls} —— 那是评价不是事实`).not.toBe(await tokenColor(page, cls));
   }
 
-  await shot(page, GOAL, "03_已过预约日");
 });
 
 // ── 验收项 6：三档高亮 ───────────────────────────────────────────────────
@@ -208,7 +209,9 @@ for (const theme of ["dark", "light"] as const) {
     const 甲色 = await colorOf((await cellByHeader(page, "甲", "预约日")).locator("span").first());
     expect([c1, c2, c3], "7 天也被高亮了 —— 阈值没生效").not.toContain(甲色);
 
-    if (theme === "dark") await shot(page, GOAL, "04_三档高亮");
+    // 只在亮色留档：暗色那张已经是 01。这一张要证明的是**色阶方向相反**，
+    // 而那只有把亮色单独拍下来才看得见。
+    if (theme === "light") await shot(page, GOAL, "02_亮色下色阶方向相反");
   });
 }
 
@@ -224,7 +227,7 @@ test("验收项8 · 预约披露源 502 时其余列照常，页面给出原因"
   // 行情照常
   await expect(await cellByHeader(page, "甲", "现价")).toHaveText("100");
 
-  await shot(page, GOAL, "05_预约源挂掉");
+  await shot(page, GOAL, "03_预约源挂掉");
   console_.check(["502 (Bad Gateway)"]);   // 浏览器对故意打桩的 502 的网络日志，不是应用错误
 });
 
