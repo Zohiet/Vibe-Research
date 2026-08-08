@@ -92,8 +92,11 @@ test("验收项7 · 表格内容宽度不超过容器可用宽度", async ({ pag
   console.log(`【宽度】列数 ${m.cols}，表格 ${m.table}px，容器可用 ${m.inner}px`);
 
   // ⚠️ **这条红了不代表实现坏了，代表这张表满了。**
-  // 那时正确的动作是先回答「砍哪列」，而不是顺手再加宽容器一次
-  // ——第 5 次加列时容器已经从 1152 → 1800 → 2000（VR-GOAL-027 决策 1）。
+  // 那时正确的动作是先回答「砍哪列」，而不是顺手再加宽一次容器。
+  //
+  // 顺带记一笔本 Goal 的教训：决策 1 原本要把容器从 1800 加宽到 2000，
+  // 理由是"21 列约 1670px 装不下"——**那个数是估算，实测只有 1574px**。
+  // 加宽根本不必要，已撤回。**这条护栏之所以有价值，正是因为它是测量而不是估算。**
   expect(m.table, `表格 ${m.table}px 装不进容器可用宽度 ${m.inner}px（当前 ${m.cols} 列）——` +
     "别急着再加宽：先看看这 22 列里哪些是你其实不看的").toBeLessThanOrEqual(m.inner);
 });
@@ -122,7 +125,10 @@ test("验收项1+2 · 一致预期成组出现，格子是 年度/PE/家数，�
   expect(title!, "说明里必须写清这是 VR 算的").toContain("现价");
   expect(title!).toContain("EPS");
 
-  await shot(page, GOAL, "01_一致预期列");
+  // 桩数据把**五种状态放在同一屏**（正常 / 高 PE / 已过期 / 无覆盖 / 取不到），
+  // 所以一张图就是验收项 1、2、4、5 的共同证据。
+  // 这已经是第三次踩同一个坑了（023 / 024 各一次）：截两张一模一样的图不是两条证据。
+  await shot(page, GOAL, "01_一致预期列与五种状态");
   console_.check();
 });
 
@@ -142,7 +148,6 @@ test("验收项4+5 · 已过期 / 无覆盖 / 取不到，三者互不相同且�
   // 戊：键不存在 —— 取不到
   await expect(await cellByHeader(page, "戊", "前向PE")).toHaveText("—");
 
-  await shot(page, GOAL, "02_多态同屏");
   console_.check();
 });
 
@@ -169,4 +174,39 @@ test("一致预期源挂掉时其余列照常，页面给出原因", async ({ pa
   await expect(await cellByHeader(page, "甲", "现价")).toHaveText("1309.2");
 
   console_.check(["502 (Bad Gateway)"]);
+});
+
+test("排序偏好从 localStorage 恢复时，数据后到也要重排", async ({ page }) => {
+  // **这条是变红实验④ 补出来的。** 原先只有"加载完再点表头"那条，
+  // 而点表头会改 `sort`——它在依赖数组里，所以一点就重算，
+  // 漏登记 `brief.consensus` 照样绿。
+  //
+  // 真正会坏的是这个场景：排序偏好在挂载时就从 localStorage 恢复了，
+  // 一致预期是**后到**的；依赖数组漏了它，useMemo 就永远返回挂载那一刻的顺序
+  // ——表格停在加入顺序，而表头明明标着"按前向PE降序"。tsc 一声不吭。
+  await assertSandbox(page);
+  await page.route("**/api/quote**", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(QUOTES) }));
+  for (const p of ["**/api/earnings**", "**/api/report-summary**", "**/api/next-earnings**"]) {
+    await page.route(p, (r) =>
+      r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: {} }) }));
+  }
+  // 让一致预期比行情晚到，坐实"后到"
+  await page.route("**/api/consensus**", async (r) => {
+    await new Promise((res) => setTimeout(res, 300));
+    await r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: CONSENSUS }) });
+  });
+  await page.addInitScript((cs) => {
+    localStorage.setItem("vr-watchlist", JSON.stringify(cs));
+    localStorage.setItem("vr-watchlist-sort", "fwd_pe:desc");   // 挂载时就已排序
+  }, CODES);
+  await page.goto("/watchlist");
+  await expect(page.getByRole("cell", { name: "甲" })).toBeVisible();
+  await expect(th(page, "前向PE")).toHaveAttribute("aria-sort", "descending");
+
+  // 数据到齐后应当重排：乙 194.1 > 甲 19.0，其余无值沉底
+  await expect
+    .poll(async () => (await rowNames(page)).slice(0, 2).join(","),
+          { message: "一致预期后到却没有触发重排 —— useMemo 的依赖数组漏了 brief.consensus" })
+    .toBe("乙,甲");
 });
