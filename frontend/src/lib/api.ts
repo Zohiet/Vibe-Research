@@ -151,6 +151,20 @@ export interface TargetPrice {
   stale: boolean;               // 超 90 天 —— 旧观点，界面弱化显示
 }
 
+// 下次财报预约披露（VR-GOAL-024）。
+//
+// ⚠️ **`Record` 的值可以是 `null`，而这与"键不存在"含义不同**：
+//   值为 null   = 上游没有它的未披露记录 → 下期还没排表 → 界面显示「待公布」
+//   键不存在     = 接口整体失败或没问过 → 界面显示 `—`
+// 「待公布」是**一年有 5 个月对全市场都成立的正常状态**，不是故障，
+// 所以它必须和"取不到"分开呈现。
+export interface NextEarnings {
+  appoint_date: string | null;
+  report_type: string | null;   // 如「2026年 半年报」
+  days_left: number | null;     // 今天 0、明天 1、**已过为负**
+  published: boolean;           // 恒为 false（取数时已过滤），UI 不据此分支
+}
+
 export interface ReportSummary {
   count: number;                // 篇数
   org_count: number;            // 覆盖机构数（去重）
@@ -359,6 +373,9 @@ export const api = {
   earnings: (codes: string) => get<Record<string, Earnings>>(`/earnings?codes=${codes}`),
   reportSummary: (codes: string) =>
     get<Record<string, ReportSummary>>(`/report-summary?codes=${codes}`),
+  // 值可能是 null（＝没有下次预约），见 NextEarnings 的注释。
+  nextEarnings: (codes: string) =>
+    get<Record<string, NextEarnings | null>>(`/next-earnings?codes=${codes}`),
   reports: (code: string) => get<Report[]>(`/reports?code=${code}`),
   news: (code: string, force = false) =>
     get<NewsItem[]>(`/news?code=${code}${force ? "&force=1" : ""}`),

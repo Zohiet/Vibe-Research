@@ -1,4 +1,8 @@
-"""VR-GOAL-023 · `/api/earnings` 与 `/api/report-summary` 的契约与缓存行为。
+"""自选股页那几个批量端点的契约与缓存行为。
+
+`/api/earnings` 与 `/api/report-summary`（VR-GOAL-023）、
+`/api/next-earnings`（VR-GOAL-024）——三条共用同一套 `codes=` 约定与缓存分片策略，
+所以放在一起测，`BRIEF_PATHS` 的参数化用例对三条同时生效。
 
 不联网：上游取数被 monkeypatch 掉，验的是校验层、缓存分片与降级取舍。
 """
@@ -10,16 +14,16 @@ import astock
 
 client = TestClient(app_module.app)
 
-BRIEF_PATHS = ("/api/earnings", "/api/report-summary")
+BRIEF_PATHS = ("/api/earnings", "/api/report-summary", "/api/next-earnings")
 
 
 @pytest.fixture(autouse=True)
 def _clear_cache():
-    app_module._EARNINGS_CACHE.clear()
-    app_module._RSUM_CACHE.clear()
+    for c in (app_module._EARNINGS_CACHE, app_module._RSUM_CACHE, app_module._APPOINT_CACHE):
+        c.clear()
     yield
-    app_module._EARNINGS_CACHE.clear()
-    app_module._RSUM_CACHE.clear()
+    for c in (app_module._EARNINGS_CACHE, app_module._RSUM_CACHE, app_module._APPOINT_CACHE):
+        c.clear()
 
 
 @pytest.mark.parametrize("path", BRIEF_PATHS)
@@ -132,3 +136,59 @@ def test_report_summary_零篇不是错误(monkeypatch):
     assert r.status_code == 200
     s = r.json()["data"]["600519"]
     assert s["count"] == 0 and s["target"] is None
+
+
+# ── /api/next-earnings（VR-GOAL-024）──────────────────────────────────────
+
+def test_next_earnings_没有下次的返回_null_而不是省掉键(monkeypatch):
+    monkeypatch.setattr(astock, "batch_next_earnings",
+                        lambda codes, today=None: {
+                            "600519": {"appoint_date": "2026-08-15", "report_type": "2026年 半年报",
+                                       "days_left": 7, "published": False}})
+    r = client.get("/api/next-earnings?codes=600519,300750")
+    assert r.status_code == 200
+    data = r.json()["data"]
+    assert data["600519"]["days_left"] == 7
+    # **这一条是本组的关键**：300750 半年报刚披露、三季报还没排表。
+    # 这与 /api/earnings「取不到就省掉键」的约定**刻意不同**——省掉键的话，
+    # 前端就分不出「没有下次（待公布）」和「接口挂了（—）」，
+    # 而前者是一年有 5 个月对全市场都成立的正常状态。
+    assert "300750" in data, "没有下次预约的 code 也必须出现在返回里"
+    assert data["300750"] is None
+
+
+def test_next_earnings_查不到的代码也进缓存(monkeypatch):
+    calls: list[list[str]] = []
+
+    def fake(codes, today=None):
+        calls.append(list(codes))
+        return {}
+
+    monkeypatch.setattr(astock, "batch_next_earnings", fake)
+    client.get("/api/next-earnings?codes=300750")
+    client.get("/api/next-earnings?codes=300750")
+    # 「一年有 5 个月全市场都查不到」——不缓存空结果的话，那 5 个月里每次请求
+    # 都会为每一只自选股重打一次上游。
+    assert calls == [["300750"]], "空结果没进缓存"
+
+
+def test_next_earnings_只为未命中的代码打上游(monkeypatch):
+    calls: list[list[str]] = []
+
+    def fake(codes, today=None):
+        calls.append(list(codes))
+        return {c: {"appoint_date": "2026-08-15", "report_type": "x",
+                    "days_left": 7, "published": False} for c in codes}
+
+    monkeypatch.setattr(astock, "batch_next_earnings", fake)
+    client.get("/api/next-earnings?codes=600519")
+    client.get("/api/next-earnings?codes=600519,000858")
+    assert calls == [["600519"], ["000858"]]
+
+
+def test_next_earnings_上游异常_502(monkeypatch):
+    def boom(codes, today=None):
+        raise RuntimeError("上游挂了")
+
+    monkeypatch.setattr(astock, "batch_next_earnings", boom)
+    assert client.get("/api/next-earnings?codes=600519").status_code == 502

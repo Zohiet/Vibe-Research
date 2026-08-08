@@ -762,6 +762,82 @@ def batch_earnings(codes: list[str]) -> dict[str, dict]:
 
 
 # ---------------------------------------------------------------------------
+# 下次财报预约披露（VR-GOAL-024）—— 东财 datacenter，**一次请求查多只**
+# ---------------------------------------------------------------------------
+
+_APPOINT_API = "https://datacenter-web.eastmoney.com/api/data/v1/get"
+_APPOINT_COLUMNS = (
+    "SECURITY_CODE,SECURITY_NAME_ABBR,REPORT_DATE,REPORT_TYPE_NAME,"
+    "APPOINT_PUBLISH_DATE,IS_PUBLISH,RESIDUAL_DAYS"
+)
+
+
+def days_until(date_str, today=None) -> int | None:
+    """预约日距今天数：今天 0、明天 1、**已过则为负**。取不到日期返回 None。
+
+    ⚠️ **刻意不使用上游的 `RESIDUAL_DAYS`**（VR-GOAL-024 拷打裁定）。
+    上游那个值今天是准的，但它是东财在查询时算的**未文档化行为**——行的 `EITIME`
+    是一个多月前，字段却对得上今天。更要命的是**逾期时上游给 `null` 不给负数**
+    （实测 `*ST萃华` 一季报预约 04-29 至今未披露），那一格会直接空掉，
+    而「已过 101 天」恰恰是最值得知道的信息。
+    """
+    from datetime import date as _date
+
+    s = str(date_str or "")[:10]
+    if len(s) != 10:
+        return None
+    try:
+        d = _date.fromisoformat(s)
+    except ValueError:
+        return None
+    return (d - (today or _date.today())).days
+
+
+def _parse_appoint_row(row: dict, today=None) -> dict:
+    """预约披露一行 → 界面要的四个字段。**纯函数**，边界见 `tests/test_next_earnings.py`。"""
+    appoint = str(row.get("APPOINT_PUBLISH_DATE") or "")[:10]
+    appoint = appoint if len(appoint) == 10 else None
+    return {
+        "appoint_date": appoint,
+        "report_type": row.get("REPORT_TYPE_NAME") or None,
+        "days_left": days_until(appoint, today),
+        "published": str(row.get("IS_PUBLISH") or "") == "1",
+    }
+
+
+def batch_next_earnings(codes: list[str], today=None) -> dict[str, dict]:
+    """多只股票各自的**下次**财报预约披露日 —— 一次请求查全部（实测 8 只 0.19s）。
+
+    取数规则：`IS_PUBLISH="0"`（未披露）按预约日升序，**每只取最早一条，含已过期**。
+    逾期那条会自然浮出来（显示「已过 N 天」），比显示它下一期的预约日更值得知道，
+    **且不需要特例代码**。
+
+    ⚠️ **取不到是常态，不是故障**：预约披露表在报告期末前后才入库，实测这一列
+    **一年约有 5 个月对全市场是空的**（上一期披露完、下一期还没排表）。
+    前端据此显示「待公布」，与「接口取不到」分开呈现。
+    """
+    codes = [c for c in (codes or []) if c]
+    if not codes:
+        return {}
+    quoted = ",".join(f'"{c}"' for c in codes)
+    r = em_get(_APPOINT_API, {
+        "sortColumns": "APPOINT_PUBLISH_DATE", "sortTypes": "1",
+        "pageSize": str(min(max(len(codes) * 2, 50), 500)), "pageNumber": "1",
+        "reportName": "RPT_PUBLIC_BS_APPOIN",
+        "columns": _APPOINT_COLUMNS,
+        "filter": f'(SECURITY_CODE in ({quoted}))(IS_PUBLISH="0")',
+    }, timeout=20)
+    rows = ((r.json() or {}).get("result") or {}).get("data") or []
+    out: dict[str, dict] = {}
+    for row in rows:
+        code = str(row.get("SECURITY_CODE") or "")
+        # 已按预约日升序，每只**第一条**即最早的那次；后面的直接跳过。
+        if code and code not in out:
+            out[code] = _parse_appoint_row(row, today)
+    return out
+
+
+# ---------------------------------------------------------------------------
 # 打板层 · 涨停/炸板/跌停/昨涨停 原始池（东财 push2ex，走 em_get 限流）
 # ⚠️ 合规：原始池含个股 code/name —— 仅供 market.py 聚合成【不含个股名】的短线情绪指标。
 #    切勿把原始池直接接成 API/UI（会甩个股名单、破产品「零标的」红线）。
